@@ -466,7 +466,14 @@ def main(argv: list[str] | None = None) -> int:
         periods_per_year = periods_per_year_for(args.frequency)
         ppy_source = "cli:frequency"
     else:
-        periods_per_year, ppy_source = DEFAULT_PERIODS_PER_YEAR, "default"
+        # None, not DEFAULT_PERIODS_PER_YEAR: hand the decision to
+        # build_report, which measures the annualisation factor from the perf
+        # frame's own timestamps. Passing the default here short-circuited
+        # that -- the CLI annualised every series at 252 and then emitted a
+        # warning claiming the timestamps could not be read, when it had
+        # never looked. The runner path was unaffected (it goes through
+        # write_sidecar_for, which passes the loaded frame down).
+        periods_per_year, ppy_source = None, None
 
     try:
         report = build_report(load_perf(args.perf),

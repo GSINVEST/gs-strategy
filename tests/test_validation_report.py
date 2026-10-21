@@ -277,6 +277,35 @@ def test_write_sidecar_measures_factor_from_a_stamped_perf(tmp_path):
     assert not any("年化係數退回預設" in w for w in doc["warnings"])
 
 
+def test_cli_measures_frequency_instead_of_assuming_252(tmp_path, capsys):
+    """`python -m ...report PERF.parquet` must measure, not assume.
+
+    Regression guard: the CLI's fallback branch passed
+    DEFAULT_PERIODS_PER_YEAR straight through, so build_report never got the
+    None that triggers inference. Every CLI run reported 252 with source
+    "default" plus a warning saying the timestamps were unreadable -- on
+    frames that carried perfectly good timestamps.
+    """
+    p = tmp_path / "perf.parquet"
+    _stamped("ME", 60).to_parquet(p, index=False)
+
+    assert report.main([str(p)]) == 0
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["periods_per_year"] == 12
+    assert doc["periods_per_year_source"] == "inferred:monthly"
+    assert not any("年化係數退回預設" in w for w in doc["warnings"])
+
+
+def test_cli_explicit_flags_still_win_over_inference(tmp_path, capsys):
+    p = tmp_path / "perf.parquet"
+    _stamped("ME", 60).to_parquet(p, index=False)
+
+    assert report.main([str(p), "--periods-per-year", "26"]) == 0
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["periods_per_year"] == 26
+    assert doc["periods_per_year_source"] == "cli"
+
+
 def test_write_sidecar_records_sources(tmp_path, monkeypatch):
     monkeypatch.delenv(report.N_TRIALS_ENV_VAR, raising=False)
     p = tmp_path / "perf.parquet"
