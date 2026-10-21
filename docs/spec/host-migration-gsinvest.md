@@ -271,9 +271,9 @@ Kevin PC 保留**唯讀實例**（可看、不可執行）。回退條件（任�
 9. 影子期對照：同輸入的 `backtest_key` 相同、績效在容差內。
 10. gsinvest 連續 ≥14 天無 Xid／AER（切換前）。
 
-## 13. 開放問題（審閱時請拍板；已附我的預設）
+## 13. 開放問題（Q1 已定案；Q2–Q7 暫採預設，待使用者審完其他部分再確認）
 
-- **Q1**：以 Forgejo 承載權威 bare repo 與 pre-receive（§5.1）。預設：是。替代：自架 `git-http-backend`＋反向代理驗身分（程式更多、且仍需自己做 per-user 認證）。
+- **Q1（2026-10-21 使用者已確認：採 Forgejo）**：以 Forgejo 承載權威 bare repo 與 pre-receive（§5.1）。預設：是。替代：自架 `git-http-backend`＋反向代理驗身分（程式更多、且仍需自己做 per-user 認證）。
 - **Q2**：帳本放 docker named volume（§3）而非 host 目錄。預設：是。代價：人類看帳本需走 API 或唯讀容器。
 - **Q3**：外網 hostname。預設 `strategy-ext.gsinvest.com`，由 dgx-a4d7 建 tunnel；DNS／CF 變更要使用者確認。
 - **Q4**：N 超線核准一次解鎖「+10」（§4.5）。預設如此；也可改成「單次一票一筆」。
