@@ -1,0 +1,42 @@
+name: ci-forgejo
+
+# gsinvest 上的 Forgejo Actions（host 模式 runner，標籤 gsinvest-host，僅註冊給 gs/gs-strategy）。
+# 對應 .github/workflows/ci.yml 的 pytest job，但不使用 `uses:` action（host 模式沒有 node／docker）：
+# checkout 用 git、Python 用 uv。Forgejo 偵測到本目錄時會忽略 .github/workflows，所以不會重複執行。
+# 與 GitHub CI 一樣不需要 TEJAPI_KEY：合成期貨圖的等價測試用真的 Zipline、離線行事曆；
+# 授權資料的測試仍然 skip（看最後的 skipped 摘要）。
+
+on:
+  push:
+    branches: [main, "ci-*"]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-forgejo-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: gsinvest-host
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - name: Checkout
+        run: |
+          git init -q .
+          git -c http.extraheader="Authorization: token ${{ github.token }}" \
+            fetch -q --depth=1 "http://127.0.0.1:3301/${{ github.repository }}.git" "${{ github.sha }}"
+          git checkout -q FETCH_HEAD
+
+      - name: Install test dependencies
+        run: |
+          UV="$HOME/forgejo-runner/bin/uv"
+          "$UV" venv -q --python "${{ matrix.python-version }}" .venv
+          "$UV" pip install -q --python .venv/bin/python -r requirements-test.txt -r requirements-bt.txt
+
+      - name: Run pytest
+        run: |
+          .venv/bin/python -m pytest tests/ -q -rs --junit-xml=pytest-report.xml
