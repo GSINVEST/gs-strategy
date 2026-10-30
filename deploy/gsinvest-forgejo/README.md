@@ -1,9 +1,9 @@
 # gsinvest 的 Forgejo 部署（權威 bare repo + pre-receive）
 
-對應 `docs/spec/host-migration-gsinvest.md` §5、§7、§11 階段 A。**這個目錄只是部署材料，尚未在 gsinvest 上部署。**
+對應 `docs/spec/host-migration-gsinvest.md` §5、§7、§11 階段 A。本目錄是部署材料；2026-10-30 已依下列步驟在 gsinvest 部署（現況見「部署狀態」）。
 
-gsinvest 現況（2026-10-30 唯讀探查）：docker 29.4 + compose v5.1、磁碟剩 6.5T、無 sudo、`:2222` 已被占用
-（所以本部署 SSH 用 `2223`）、已有 chipk／qd／vllm 等容器網路，沒有 gs-strategy 相關容器。
+gsinvest 環境（2026-10-30）：docker 29.4 + compose v5.1、磁碟剩 6.5T、無 sudo、`:2222` 是 gsinvest 自己的 sshd
+（所以本部署 SSH 用 `2223`）、同機另有 chipk／qd／vllm 等容器網路。
 
 ## 一、設定步驟（2026-10-30 已在 gsinvest 實際走過 1–9）
 
