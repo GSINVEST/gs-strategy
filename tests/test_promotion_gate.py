@@ -175,12 +175,66 @@ def test_missing_ledger_gives_zero_trials_and_provisional_dsr(tmp_path):
     assert rep.n_trials == 0 and dsr.status == PROVISIONAL
 
 
-def test_all_green_is_eligible(tmp_path):
+def _all_green(tmp_path, **kw):
     rng = np.random.default_rng(3)
     m = rng.normal(0.0, 0.01, (400, 6))
     m[:, 0] += 0.003
-    rep = gate.evaluate(_inputs(tmp_path, candidates=m))
-    assert rep.verdict == "eligible", [c.to_dict() for c in rep.checks if c.status != OK]
+    return gate.evaluate(_inputs(tmp_path, candidates=m, **kw))
+
+
+def test_all_green_with_self_declared_inputs_is_only_conditional(tmp_path):
+    # SPA p 值與 --external 結束碼是手填的，閘門驗不了來源：全 ok 也不得 eligible。
+    rep = _all_green(tmp_path)
+    assert all(c.status == OK for c in rep.checks), [c.to_dict() for c in rep.checks if c.status != OK]
+    assert rep.verdict == "conditional"
+    declared = {c.name for c in rep.checks if c.self_declared}
+    assert declared == {"spa", *gate.EXTERNAL_CHECKS}
+    assert all("自行申報" in c.detail for c in rep.checks if c.self_declared)
+
+
+def test_computed_checks_are_not_marked_self_declared(tmp_path):
+    rep = _all_green(tmp_path)
+    assert not any(c.self_declared for c in rep.checks if c.name in {"sample", "dsr", "pbo", "cost_stress"})
+
+
+def test_verdict_eligible_requires_no_self_declared_check():
+    ok = CheckResult("x", OK, None, "-", "")
+    decl = CheckResult("y", OK, None, "-", "", self_declared=True)
+    assert verdict_of([ok]) == "eligible"
+    assert verdict_of([ok, decl]) == "conditional"
+    assert verdict_of([ok, CheckResult("z", BLOCKED, None, "-", "", True)]) == "blocked"
+
+
+@pytest.mark.parametrize("p", [-0.1, 1.5, float("nan")])
+def test_check_spa_rejects_out_of_range_p(p):
+    res = checks.check_spa(p)
+    assert res.status == UNAVAILABLE and res.value is None
+
+
+def test_check_spa_boundaries_are_valid():
+    assert checks.check_spa(0.0).status == OK
+    assert checks.check_spa(1.0).status == BLOCKED
+
+
+def test_report_binds_inputs_by_sha256(tmp_path):
+    a = gate.evaluate(_inputs(tmp_path)).inputs_sha256
+    assert a["returns"] and a["candidates"] is None and a["stress_returns"]
+    b = gate.evaluate(_inputs(tmp_path, returns=_good_returns(seed=9))).inputs_sha256
+    assert a["returns"] != b["returns"] and a["stress_returns"] == b["stress_returns"]
+    assert gate.evaluate(_inputs(tmp_path)).inputs_sha256 == a
+
+
+def test_n_trials_uses_deduplicated_ledger(tmp_path):
+    # gs-strategy#50：同 trial_id 的追加行只算一次；沒有 trial_id 的逐筆算。
+    lines = [
+        {"trial_id": "a", "stat_decision": {"delta_n": 1}},
+        {"trial_id": "a", "stat_decision": {"delta_n": 1}},     # 完成行，不得讓 N 加倍
+        {"trial_id": "b", "stat_decision": {"delta_n": 1}},
+        {"stat_decision": {"delta_n": 1}},
+    ]
+    p = tmp_path / "t.jsonl"
+    p.write_text("\n".join(json.dumps(x) for x in lines) + "\n", encoding="utf-8")
+    assert gate.evaluate(_inputs(tmp_path, ledger=p)).n_trials == 3
 
 
 def test_missing_pbo_and_spa_make_it_conditional(tmp_path):

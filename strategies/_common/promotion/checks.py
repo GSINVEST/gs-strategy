@@ -12,6 +12,7 @@ from strategies._common.validation.sharpe import deflated_sharpe_ratio
 from . import rules
 from .schema import BLOCKED, OK, PROVISIONAL, UNAVAILABLE, CheckResult
 
+SELF_DECLARED_NOTE = "（自行申報，閘門未驗證來源）"
 MIN_RETURNS_FOR_DSR = 20   # 與 validation/report.py::build_report 的下限一致
 
 
@@ -84,8 +85,11 @@ def check_spa(p_value: float | None) -> CheckResult:
     if p_value is None:
         return CheckResult("spa", UNAVAILABLE, None, threshold, "SPA／RC 未跑")
     p = float(p_value)
+    if not (0.0 <= p <= 1.0):      # 含 NaN
+        return CheckResult("spa", UNAVAILABLE, None, threshold,
+                           f"p 值 {p_value!r} 不在 [0,1]，視為未提供" + SELF_DECLARED_NOTE, True)
     status = OK if p < rules.SPA_ALPHA else BLOCKED
-    return CheckResult("spa", status, p, threshold, "")
+    return CheckResult("spa", status, p, threshold, SELF_DECLARED_NOTE.strip(), True)
 
 
 _EXIT_CODE_STATUS = {0: OK, 1: PROVISIONAL, 2: BLOCKED, 3: UNAVAILABLE}
@@ -99,5 +103,6 @@ def check_external(name: str, exit_code: int | None) -> CheckResult:
     status = _EXIT_CODE_STATUS.get(int(exit_code))
     if status is None:
         return CheckResult(name, UNAVAILABLE, float(exit_code), threshold,
-                           f"未知結束碼 {exit_code}")
-    return CheckResult(name, status, float(exit_code), threshold, "")
+                           f"未知結束碼 {exit_code}" + SELF_DECLARED_NOTE, True)
+    return CheckResult(name, status, float(exit_code), threshold,
+                       SELF_DECLARED_NOTE.strip(), True)

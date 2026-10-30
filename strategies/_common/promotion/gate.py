@@ -1,6 +1,7 @@
 """晉升閘門：把既有的統計檢查合成一份可重算的報告。純函式，不寫檔、不呼叫 LLM。"""
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -14,6 +15,14 @@ from .schema import SCHEMA, GateReport, verdict_of
 
 # 對應 quant-backt-tools 的 skills：param-robustness、tail-scenarios、repro-audit、engine-parity
 EXTERNAL_CHECKS = ("param_robustness", "tail_scenarios", "repro_audit", "engine_parity")
+
+
+def _digest(arr) -> str | None:
+    """把輸入陣列綁進報告：同樣的數字得到同樣的 sha256，換了輸入就對不上。"""
+    if arr is None:
+        return None
+    a = np.ascontiguousarray(np.asarray(list(arr) if not isinstance(arr, np.ndarray) else arr, dtype="<f8"))
+    return hashlib.sha256(str(a.shape).encode("ascii") + b"\0" + a.tobytes()).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -47,4 +56,9 @@ def evaluate(inputs: GateInputs) -> GateReport:
         n_trials_source="ledger",
         checks=tuple(results),
         verdict=verdict_of(results),
+        inputs_sha256={
+            "returns": _digest(inputs.returns),
+            "candidates": _digest(inputs.candidates),
+            "stress_returns": _digest(inputs.stress_returns),
+        },
     )

@@ -1,0 +1,4 @@
+#!/bin/bash
+# Forgejo 自訂 pre-receive 的薄包裝；邏輯在 pre_receive.py。stdin 每行 "<old> <new> <ref>"。
+# 不得印出環境變數（spec §5.2-6）。
+exec python3 /opt/gs-hooks/pre_receive.py

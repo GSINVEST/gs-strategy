@@ -1,0 +1,6 @@
+[Unit]
+Description=gs-forgejo daily git bundle backup to jsonhuang
+
+[Service]
+Type=oneshot
+ExecStart=%h/gs-forgejo/gs-forgejo-backup.sh
