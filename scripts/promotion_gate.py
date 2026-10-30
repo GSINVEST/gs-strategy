@@ -60,6 +60,11 @@ def _build_parser() -> argparse.ArgumentParser:
     ev.add_argument("--cost-model-version", required=True)
     ev.add_argument("--tags", default="", help="逗號分隔")
 
+    st = sub.add_parser("stress", help="成本乘 factor 後重跑回測，輸出 --stress 要用的報酬 parquet")
+    st.add_argument("--strategy-dir", type=Path, required=True)
+    st.add_argument("--out", type=Path, required=True)
+    st.add_argument("--factor", type=float, default=2.0)
+
     pr = sub.add_parser("promote")
     pr.add_argument("--strategy-dir", type=Path, required=True)
     pr.add_argument("--strategy-id", required=True)
@@ -97,6 +102,11 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"警告：此版本第 {rec['screening_count']} 次篩選{flip}。"
                       "重跑換輸入不計入 trial，晉升時須附簽註。", file=sys.stderr)
             print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
+            return 0
+        if args.cmd == "stress":
+            from strategies._common.promotion.cost_stress import run_cost_stress
+            print(json.dumps(run_cost_stress(args.strategy_dir, args.out, args.factor),
+                             ensure_ascii=False, indent=2))
             return 0
         rec = promote(args.strategy_id, strategy_dir=args.strategy_dir, by=args.by,
                       note=args.note, registry=args.registry)
