@@ -99,3 +99,10 @@ def test_cron_entry_scripts_are_executable_in_git():
 def test_daily_script_picks_up_default_notify_command():
     s = (D.parents[1] / "scripts" / "dryrun_run_daily.sh").read_text(encoding="utf-8")
     assert ".config/gs-dryrun/notify" in s and "DRYRUN_ALERT_CMD" in s
+
+
+def test_daily_script_builds_and_pushes_snapshot():
+    s = (D.parents[1] / "scripts" / "dryrun_run_daily.sh").read_text(encoding="utf-8")
+    assert "dryrun.snapshot" in s and "dryrun.push" in s
+    assert s.index("dryrun.snapshot") > s.index("dryrun.ops health")
+    assert "$rc" in s.split("dryrun.push", 1)[1]          # 推送結果要併入結束碼

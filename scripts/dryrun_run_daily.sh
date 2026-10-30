@@ -34,4 +34,14 @@ python3 -m strategies._common.dryrun.ops backup --ledger "$LEDGER" --dest "$BACK
 python3 -m strategies._common.dryrun.ops health --ledger "$LEDGER" --alert-log "$ALERT_LOG"
 hrc=$?
 [ "$hrc" -gt "$rc" ] && rc=$hrc
+
+# 快照（給 gateway 的面板用）：產生後推送；未設定 push_url／push_key 時只警告。推送失敗併入結束碼
+SNAP="$(mktemp)"; trap 'rm -f "$SNAP"' EXIT
+if python3 -m strategies._common.dryrun.snapshot --ledger "$LEDGER" --strategies-dir "$DRYRUN_REPO/strategies" --out "$SNAP"; then
+  python3 -m strategies._common.dryrun.push --file "$SNAP"
+  prc=$?
+else
+  echo "[CRIT] 快照產生失敗"; prc=2
+fi
+[ "$prc" -gt "$rc" ] && rc=$prc
 exit $rc

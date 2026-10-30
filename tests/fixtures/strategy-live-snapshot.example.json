@@ -1,0 +1,105 @@
+{
+ "schema": "strategy-live-snapshot/1",
+ "generated_at": "2026-10-30T08:00:00+00:00",
+ "runs": [
+  {
+   "strategy_id": "vgrsi_tx",
+   "lineage_id": "L",
+   "branch": "b",
+   "sha8": "ssssssss",
+   "classification": [
+    "open"
+   ],
+   "start_date": "2026-10-26",
+   "status": "active",
+   "benchmark_status": "D2_UNAVAILABLE",
+   "last_session": "2026-10-29",
+   "trailing_missing": 0,
+   "days": 2,
+   "equity": {
+    "optimistic": [
+     [
+      "2026-10-28",
+      5000000.0
+     ],
+     [
+      "2026-10-29",
+      5000000.0
+     ]
+    ],
+    "base": [
+     [
+      "2026-10-28",
+      5000000.0
+     ],
+     [
+      "2026-10-29",
+      5000000.0
+     ]
+    ],
+    "pessimistic": [
+     [
+      "2026-10-28",
+      5000000.0
+     ],
+     [
+      "2026-10-29",
+      5000000.0
+     ]
+    ]
+   },
+   "cost_cum": {
+    "spread": 0,
+    "impact": 0,
+    "commission": 0
+   }
+  },
+  {
+   "strategy_id": "secret_demo",
+   "lineage_id": "L",
+   "branch": "b",
+   "sha8": "ssssssss",
+   "classification": [
+    "forge"
+   ],
+   "start_date": "2026-10-26",
+   "status": "active",
+   "benchmark_status": "D2_UNAVAILABLE",
+   "last_session": "2026-10-29",
+   "trailing_missing": 0,
+   "days": 1,
+   "equity": {
+    "optimistic": [
+     [
+      "2026-10-29",
+      5000000.0
+     ]
+    ],
+    "base": [
+     [
+      "2026-10-29",
+      5000000.0
+     ]
+    ],
+    "pessimistic": [
+     [
+      "2026-10-29",
+      5000000.0
+     ]
+    ]
+   },
+   "cost_cum": {
+    "spread": 0,
+    "impact": 0,
+    "commission": 0
+   }
+  }
+ ],
+ "alerts": [
+  {
+   "level": "WARN",
+   "strategy_id": "vgrsi_tx",
+   "message": "vgrsi_tx: 最近連續缺漏 1 日"
+  }
+ ]
+}
