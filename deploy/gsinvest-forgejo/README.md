@@ -72,6 +72,42 @@ GitHub 是程式碼的權威。gsinvest 的 user-systemd timer 每 15 分鐘執�
 
 已知限制：繞過 hook 的同步不會觸發 Forgejo 的 post-receive，網頁分支清單可能落後 git 實際 refs（內容與 `main` 正確）；重啟 Forgejo 或其內建分支同步可補齊。
 
+## 備份保留策略（spec §7：永久保存、不輪出）
+
+規格明定每日快照**永久保存**，所以不做輪替與刪除。用量：每個 bundle 約 2.3MB，一年約 0.8GB，jsonhuang 剩 6.4T，可以忽略。
+jsonhuang 的接收腳本只新增檔案、不覆蓋，write-only 金鑰也無法刪除既有備份。真要清理，只能由人在 jsonhuang 上手動執行。
+
+## 每週加密離線備份（腳本已備，**尚未啟用**）
+
+`backup/gs-weekly-offline.sh`（在 jsonhuang 上跑）：每週日 04:30 把 `/backup/gs-strategy` 打包，用 `age` **公鑰**加密，`scp` 到離線備份機（public-pc）並附 sha256。
+私鑰只由 Kevin 離線保管，任何伺服器都不持有。啟用前需要你提供／確認三樣東西：
+
+1. **age 金鑰對**：在你信任的電腦自己產生（`age-keygen -o gs-backup.key`），私鑰離線保存；只把 `age1…` 公鑰給我或寫進 jsonhuang 的設定。**不要把私鑰貼進對話。**
+2. **離線機目的地**：`public-pc`（192.168.11.120，Windows）的 F 槽路徑，以及 jsonhuang 到 public-pc 的 SSH 金鑰（建議另建專用金鑰、只放該目錄）。
+3. **jsonhuang 安裝 age**：`sudo apt install age`（jsonhuang 有免密 sudo）。
+
+設定檔 `~/.config/gs-weekly-offline.env`（0600，不進 repo）：
+```
+AGE_RECIPIENT=age1...
+OFFLINE_DEST=public-pc:/F:/gs-backup/
+```
+安裝：腳本放 `~/bin/`，`.service`／`.timer` 放 `~/.config/systemd/user/`，`systemctl --user enable --now gs-weekly-offline.timer`。
+**還原要點**：用私鑰 `age -d -i gs-backup.key gs-strategy-YYYY-Www.tar.age | tar -x`，再對 bundle 做 `git clone`；請在啟用後做一次實際解密演練。
+
+## DNS 與 Cloudflare Access（**步驟，尚未執行**）
+
+這一塊屬於**研究服務（StratyUI）上線**，不是 Forgejo：Forgejo 目前只綁 `127.0.0.1:3301` 與內網 SSH `2223`，沒有對外。規格 §8.2 的限制：
+**Cloudflare API token 只放在 dgx-a4d7，不得帶到其他機器**；gsinvest 只放 tunnel 的 connector token。所以以下由你在 dgx-a4d7（或 Cloudflare 網頁）操作：
+
+1. **內網 DNS**：`strategy.gsinvest.com` 指向 gs-linux（wiki-caddy 所在，OIDC），並在 gs-linux 設轉埠到 gsinvest 的 app 埠（app 容器上線後才有）。
+2. **外網 hostname**：另取一個不同的名稱（例如 `strategy-ext.gsinvest.com`，spec §13 Q3），避免同名雙路徑造成 Host／Origin 檢查混淆。
+3. **Tunnel**：在 dgx-a4d7 以 API token 建 tunnel，取得 connector token，只把 connector token 交給 gsinvest 的 `cloudflared` 容器。
+4. **Access application**：外網 hostname 建 application，policy 只含三位使用者 email（One-time PIN），session 24 小時。
+5. **app 端第二層驗證**：app 驗 `Cf-Access-Jwt-Assertion`（RS256、aud、iss、exp），email 必須在 `roles.yaml` 才有寫入權；`--public-host` 同時列兩個 hostname。
+6. **驗收**：未登入者看不到；email 通過但不在 roles 名單者唯讀；兩條入口各測一次。
+
+**前置條件**：app 容器（`gs-strategy-app`）尚未建置，這幾步目前沒有可以指向的服務。
+
 ## 二、驗證
 
 本機（不需 Forgejo）：`pytest deploy/gsinvest-forgejo/hooks/test_pre_receive.py` ——用暫時 bare repo 驗：
