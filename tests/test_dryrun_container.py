@@ -75,3 +75,9 @@ def test_live_egress_probe():
     r = subprocess.run(["bash", "verify-egress.sh"], cwd=D, capture_output=True, text=True,
                        encoding="utf-8", timeout=600)
     assert r.returncode == 0, r.stdout[-3000:] + r.stderr[-1500:]
+
+
+def test_daily_script_runs_backup_and_health_on_host():
+    s = (D.parents[1] / "scripts" / "dryrun_run_daily.sh").read_text(encoding="utf-8")
+    assert "dryrun.ops backup" in s and "dryrun.ops health" in s
+    assert "docker compose run" in s and s.index("dryrun.ops backup") > s.index("docker compose run")

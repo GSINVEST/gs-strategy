@@ -58,7 +58,7 @@
 
 - D2 benchmark 包（stub 介面而已）；D4 滑價校準；D5 gateway／桌面版。
 - 個股期貨（需百分比價差與成交量上限驗證後再加）。
-- 排程「已提供安裝腳本但未啟用」（見下）；沒有告警通知（暫停只寫 `dry_events`，需要人去看）。
+- 排程「已提供安裝腳本但未啟用」（見下）；告警與備份見「告警與備份」一節。
 - 到達價落差、下單延遲、盤後時段（bundle 只含日盤）。
 - 衝擊項 eta 校準（預設關閉）。
 
@@ -101,6 +101,15 @@ DRYRUN_DOCKER_TESTS=1 pytest tests/test_dryrun_container.py          # 同上，
 
 已實跑驗證（本機 WSL docker，2026-10-30）：`verify-egress.sh` 17/17；容器內以合成的 promoted 記錄（僅測試用、在暫存 repo 副本）走 `start`→`run`×2，三情境皆 `OK`，帳本只有 `mode=DRY`，rootfs 與 `/zipline/data` 唯讀（`/zipline` 為 tmpfs，因 zipline 啟動會在 ZIPLINE_ROOT 建 `extension.py`）。**未驗證**：真實 promoted 策略、排程實際觸發（尚未 apply）、長期運行。
 
+## 告警與備份
+
+由 `scripts/dryrun_run_daily.sh` 在每次跑完後於**主機**執行 `strategies/_common/dryrun/ops.py`（標準函式庫、唯讀開帳本、不連網；不進容器，因為容器沒有出口）：
+
+- `ops backup`：用 sqlite 線上備份 API 複製帳本到 `DRYRUN_BACKUP_DIR`（預設 `~/.local/share/gs-dryrun-backup`），驗 `integrity_check` 與四張表列數一致才算成功，保留最近 14 份（只輪替 `dry_ledger-*.sqlite`，不碰其他檔）。
+- `ops health`：每支策略檢查 ①已暫停＝嚴重 ②連續缺漏 1–2 日＝警告、≥3 日＝嚴重 ③最後紀錄距今超過 5 個日曆日＝嚴重（排程沒在跑）；帳本不存在＝嚴重；帳本有但沒任何 run＝警告。結束碼 0／1／2。
+- 有警告以上：追加到 `DRYRUN_ALERT_LOG`（預設 `~/.local/state/gs-dryrun/alerts.log`），並把訊息從 stdin 餵給環境變數 `DRYRUN_ALERT_CMD`（例如你的 Slack／mail 小工具；通知指令失敗只印 stderr，不影響檢查）。
+- 已實跑（WSL、系統 python3.12）：備份成功並產出檔案、缺漏 1 日回 WARN 並寫入 alert log、帳本不存在回 CRIT；單元測試 11 項。**未驗證**：`DRYRUN_ALERT_CMD` 接真實通知通道、cron 下的環境變數。
+
 ## 排程
 
 ```bash
@@ -116,5 +125,5 @@ scripts/dryrun_schedule.sh remove --apply
 - **還沒有任何策略被晉升**（`log/promotions.jsonl` 不存在），所以排程啟用後每支策略都會因 `NotPromoted` 失敗，直到人完成 D1 的 screened → promote。
 - 網路層隔離靠 `internal` 網路，不是代理；代理只負責「唯一的出口」只放行 TEJ。Docker `internal` 網路的效力取決於 docker 主機設定，已在本機 WSL docker 實跑一次，其他主機需重跑 `verify-egress.sh`。
 - Windows 主機的 `C:/Users/User/.shioaji` 存在券商憑證。容器沒有掛載它，但**不要**把 `DRYRUN_REPO`／`ZIPLINE_DATA` 指到含該路徑的目錄，也不要在容器外（WSL 直接）跑 dry run。
-- 沒有告警（暫停、缺漏只寫帳本事件）；沒有帳本備份；帳本是主機目錄裡的 SQLite 檔，刪檔即失去帳本（trigger 防不了刪檔）；`scripts/dryrun_schedule.sh` 的 `--ledger-dir` 可改位置。
+- 告警只有「寫檔＋可選的外部指令」，沒有內建通知通道：沒設 `DRYRUN_ALERT_CMD` 就只會寫 `alerts.log`，沒人看就等於沒有告警。備份只複製到同一台主機的另一個目錄，主機整台壞掉仍會失去帳本與備份；刪帳本檔的風險（trigger 防不了）靠備份降低，不是消除。
 - 容器內 `api.tej.com.tw` 是目前已知唯一必要主機；若 zipline-tej 日後新增其他主機，連線會失敗，需更新 `squid.conf`。
