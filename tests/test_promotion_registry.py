@@ -128,3 +128,47 @@ def test_new_branch_must_be_screened_again(strat, reg, monkeypatch):
     _screen(_report([OK], strategy_id="s1"), strat, reg, branch="b")
     ev = registry.promote("s1", strategy_dir=strat, by="kevin", registry=reg)
     assert ev["branch"] == "b"
+
+
+import pandas as pd
+
+from scripts import promotion_gate
+
+
+def _write_perf(path, n=300, seed=0):
+    rng = np.random.default_rng(seed)
+    pd.DataFrame({"returns": rng.normal(0.002, 0.01, n)}).to_parquet(path)
+
+
+def test_cli_evaluate_then_promote(tmp_path, strat, monkeypatch, capsys):
+    monkeypatch.setenv("GS_PROMOTERS", "kevin")
+    perf = tmp_path / "perf.parquet"
+    _write_perf(perf)
+    ledger = tmp_path / "trials.jsonl"
+    ledger.write_text(json.dumps({"stat_decision": {"delta_n": 1}}) + "\n" +
+                      json.dumps({"stat_decision": {"delta_n": 1}}) + "\n", encoding="utf-8")
+    reg = tmp_path / "promotions.jsonl"
+    common = ["--strategy-dir", str(strat), "--registry", str(reg)]
+    rc = promotion_gate.main(["evaluate", *common, "--perf", str(perf), "--ledger", str(ledger),
+                              "--lineage-id", "L1", "--branch", "main",
+                              "--framework-version", "zipline-tej@abc",
+                              "--data-snapshot", "2026-10-30",
+                              "--cost-model-version", "L1-v0",
+                              "--strategy-id", "s1"])
+    out = json.loads(capsys.readouterr().out)
+    assert rc == 0 and out["verdict"] == "conditional"      # 缺 PBO／SPA／外部檢查
+    rc = promotion_gate.main(["promote", *common, "--strategy-id", "s1", "--by", "kevin"])
+    assert rc == 2                                            # conditional 沒附簽註 → 被拒
+    rc = promotion_gate.main(["promote", *common, "--strategy-id", "s1", "--by", "kevin",
+                              "--note", "PBO／SPA 未跑，人工簽註"])
+    assert rc == 0
+
+
+def test_cli_missing_perf_is_input_error(tmp_path, strat):
+    rc = promotion_gate.main(["evaluate", "--strategy-dir", str(strat),
+                              "--perf", str(tmp_path / "nope.parquet"),
+                              "--strategy-id", "s1", "--lineage-id", "L", "--branch", "b",
+                              "--framework-version", "v", "--data-snapshot", "d",
+                              "--cost-model-version", "c",
+                              "--registry", str(tmp_path / "r.jsonl")])
+    assert rc == 3
