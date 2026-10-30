@@ -134,3 +134,79 @@ def test_check_external_maps_exit_codes(code, expected):
 
 def test_check_external_unknown_code_is_unavailable():
     assert checks.check_external("tail_scenarios", 99).status == UNAVAILABLE
+
+
+import json
+
+from strategies._common.promotion import gate
+
+
+def _ledger(tmp_path, n):
+    p = tmp_path / "trials.jsonl"
+    p.write_text(
+        "\n".join(json.dumps({"stat_decision": {"delta_n": 1}}) for _ in range(n)) + "\n",
+        encoding="utf-8",
+    )
+    return p
+
+
+def _inputs(tmp_path, **kw):
+    base = dict(
+        strategy_id="s1",
+        returns=_good_returns(),
+        ledger=_ledger(tmp_path, 5),
+        candidates=None,
+        stress_returns=np.full(300, 0.001),
+        spa_p=0.01,
+        external={n: 0 for n in gate.EXTERNAL_CHECKS},
+    )
+    base.update(kw)
+    return gate.GateInputs(**base)
+
+
+def test_n_trials_comes_from_ledger_not_caller(tmp_path):
+    rep = gate.evaluate(_inputs(tmp_path))
+    assert rep.n_trials == 5 and rep.n_trials_source == "ledger"
+
+
+def test_missing_ledger_gives_zero_trials_and_provisional_dsr(tmp_path):
+    rep = gate.evaluate(_inputs(tmp_path, ledger=tmp_path / "nope.jsonl"))
+    dsr = next(c for c in rep.checks if c.name == "dsr")
+    assert rep.n_trials == 0 and dsr.status == PROVISIONAL
+
+
+def test_all_green_is_eligible(tmp_path):
+    rng = np.random.default_rng(3)
+    m = rng.normal(0.0, 0.01, (400, 6))
+    m[:, 0] += 0.003
+    rep = gate.evaluate(_inputs(tmp_path, candidates=m))
+    assert rep.verdict == "eligible", [c.to_dict() for c in rep.checks if c.status != OK]
+
+
+def test_missing_pbo_and_spa_make_it_conditional(tmp_path):
+    rep = gate.evaluate(_inputs(tmp_path, candidates=None, spa_p=None))
+    assert rep.verdict == "conditional"
+    names = {c.name for c in rep.checks if c.status == UNAVAILABLE}
+    assert {"pbo", "spa"} <= names
+
+
+def test_missing_external_checks_are_listed_unavailable(tmp_path):
+    rep = gate.evaluate(_inputs(tmp_path, external={}))
+    names = {c.name for c in rep.checks if c.status == UNAVAILABLE}
+    assert set(gate.EXTERNAL_CHECKS) <= names
+
+
+def test_any_blocked_blocks(tmp_path):
+    rep = gate.evaluate(_inputs(tmp_path, returns=_zero_skill_returns()))
+    assert rep.verdict == "blocked"
+
+
+def test_evaluate_is_deterministic(tmp_path):
+    a = gate.evaluate(_inputs(tmp_path)).to_dict()
+    b = gate.evaluate(_inputs(tmp_path)).to_dict()
+    assert a == b
+
+
+def test_report_carries_schema_and_rules_version(tmp_path):
+    rep = gate.evaluate(_inputs(tmp_path)).to_dict()
+    assert rep["schema"] == "promotion-report/1" and rep["rules_version"] == rules.RULES_VERSION
