@@ -46,7 +46,7 @@ PREREG_DIR = "experiments/preregistration/"
 PREREG_NON_REGISTRATION = {"TEMPLATE.yaml", "README.md"}
 
 #: 只准在檔尾追加的檔案。
-APPEND_ONLY_PATHS = ("log/trials.jsonl",)
+APPEND_ONLY_PATHS = ("log/trials.jsonl", "log/submissions.jsonl")
 
 
 def is_frozen_registration(path: str) -> bool:
@@ -62,6 +62,14 @@ def is_frozen_registration(path: str) -> bool:
     if "/" in name:                      # 子目錄先不納入，需要時再擴充
         return False
     return name.endswith(".yaml") and name not in PREREG_NON_REGISTRATION
+
+
+#: 提交佇列的 bundle 目錄：寫一次不覆寫（稽核證據，核准時雜湊會被記進 ledger）。
+SUBMITTED_DIR = "strategies/_submitted/"
+
+
+def is_frozen_submission(path: str) -> bool:
+    return path.startswith(SUBMITTED_DIR) and len(path) > len(SUBMITTED_DIR)
 
 
 @dataclass
@@ -115,9 +123,39 @@ def _staged_lines(path: str) -> list[str] | None:
     return r.stdout.splitlines()
 
 
+def _split_range(rev_range: str) -> tuple[str, str]:
+    """``A..B`` 或 ``A...B`` -> (改前的 rev, 改後的 rev)。
+
+    CI 用 range 模式檢查已 commit 的變更，此時 index 等於 HEAD，不能拿 index 當
+    「改後」，也不能拿 HEAD 當「改前」——否則兩邊相同，改寫永遠偵測不到。
+    """
+    three = "..." in rev_range
+    left, _, right = rev_range.partition("..." if three else "..")
+    left, right = left or "HEAD", right or "HEAD"
+    if three:
+        mb = _git("merge-base", left, right).strip()
+        left = mb or left
+    return left, right
+
+
 def check(rev_range: str | None = None, base: str = "HEAD") -> list[Violation]:
     violations: list[Violation] = []
+    after_rev: str | None = None
+    if rev_range:
+        base, after_rev = _split_range(rev_range)
     for status, old_path, new_path in _staged_changes(rev_range):
+        # --- 提交佇列的 bundle：寫一次不覆寫 -----------------------------
+        if ((is_frozen_submission(old_path) or is_frozen_submission(new_path))
+                and status != "A"):
+            kind = {"M": "修改", "D": "刪除"}.get(status[0], f"變更（{status}）")
+            if status.startswith("R"):
+                kind = "改名"
+            violations.append(Violation(
+                new_path, f"提交的 bundle 不可{kind}",
+                "核准時 bundle 的雜湊會被記進 ledger；事後改動就對不上。"
+                "要改就以新內容重新提交（新內容 = 新 submission、新 trial）。",
+            ))
+
         # --- 登記檔：只准新增 -------------------------------------------
         if ((is_frozen_registration(old_path) or is_frozen_registration(new_path))
                 and status != "A"):
@@ -142,7 +180,8 @@ def check(rev_range: str | None = None, base: str = "HEAD") -> list[Violation]:
                 ))
                 continue
             before = _blob(base, old_path)
-            after = _staged_lines(new_path)
+            after = (_blob(after_rev, new_path) if after_rev
+                     else _staged_lines(new_path))
             if before is None or after is None:
                 continue
             if len(after) < len(before):

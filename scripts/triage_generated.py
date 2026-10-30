@@ -433,7 +433,8 @@ def count_existing_selection_trials(ledger: Path = LEDGER) -> int:
     """
     if not ledger.is_file():
         return 0
-    n = 0
+    from strategies._common.validation.decision import latest_by_trial_id
+    records = []
     for line in ledger.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line:
@@ -442,8 +443,11 @@ def count_existing_selection_trials(ledger: Path = LEDGER) -> int:
             rec = json.loads(line)
         except json.JSONDecodeError:
             continue
-        n += int((rec.get("stat_decision") or {}).get("delta_n", 0))
-    return n
+        if isinstance(rec, dict):
+            records.append(rec)
+    # 同 trial_id 取最後一筆，與 stat_tree／audit_ledger 同口徑。
+    return sum(int((r.get("stat_decision") or {}).get("delta_n", 0))
+               for r in latest_by_trial_id(records))
 
 
 def main(argv: list[str] | None = None) -> int:
