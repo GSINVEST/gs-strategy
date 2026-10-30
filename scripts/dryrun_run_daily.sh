@@ -11,10 +11,23 @@ STRATEGIES="${DRYRUN_STRATEGIES:-vgrsi_tx tsmom_tx_mtx cubic_momentum_tx}"
 
 cd "$DRYRUN_REPO/dockerfile/dryrun" || exit 1
 echo "== $(date -Is) dryrun daily =="
-docker compose up -d egress-proxy || exit 1
 rc=0
+if docker compose up -d egress-proxy; then
 for s in $STRATEGIES; do
   # 尚未啟動（沒有 promoted 記錄）的策略會失敗，記錄後繼續下一支
   docker compose run --rm dryrun run --strategy-id "$s" || { echo "FAILED: $s"; rc=1; }
 done
+else
+  echo "FAILED: egress-proxy 起不來"; rc=1
+fi
+
+# 主機端營運檢查（標準函式庫，不連網）：先備份再檢查健康；失敗只告警，不影響已寫入的帳本
+LEDGER="$DRYRUN_LEDGER_DIR/dry_ledger.sqlite"
+BACKUP_DIR="${DRYRUN_BACKUP_DIR:-$HOME/.local/share/gs-dryrun-backup}"
+ALERT_LOG="${DRYRUN_ALERT_LOG:-$HOME/.local/state/gs-dryrun/alerts.log}"
+cd "$DRYRUN_REPO" || exit 1
+python3 -m strategies._common.dryrun.ops backup --ledger "$LEDGER" --dest "$BACKUP_DIR" || rc=2
+python3 -m strategies._common.dryrun.ops health --ledger "$LEDGER" --alert-log "$ALERT_LOG"
+hrc=$?
+[ "$hrc" -gt "$rc" ] && rc=$hrc
 exit $rc
