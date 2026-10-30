@@ -71,7 +71,7 @@ class FillDecision:
 
 
 def _bad_number(x) -> bool:
-    return x is None or x != x
+    return x is None or not math.isfinite(x)
 
 
 def decide_fill(params: L1Params, *, side: int, qty: int, ref_price, bar_volume,

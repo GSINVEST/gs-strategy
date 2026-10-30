@@ -21,13 +21,12 @@ DEFAULT_DIR = REPO / "log" / "dryrun"
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="dryrun")
-    ap.add_argument("cmd", choices=["start", "run", "resume"])
-    ap.add_argument("--strategy-id", required=True)
+    ap.add_argument("cmd", choices=["start", "run", "resume", "framework-version"])
+    ap.add_argument("--strategy-id")
     ap.add_argument("--ledger", type=Path, default=DEFAULT_DIR / "dry_ledger.sqlite")
     ap.add_argument("--start-date")
     ap.add_argument("--capital", type=float)
     ap.add_argument("--session")
-    ap.add_argument("--framework-version", help="覆寫框架版本字串（須與晉升記錄一致）")
     ap.add_argument("--by")
     ap.add_argument("--note", default="")
     a = ap.parse_args(argv)
@@ -37,7 +36,12 @@ def main(argv=None) -> int:
         from .ledger import DryLedger
         from .zl_adapter import ZiplineSimRunner
 
-        runner = ZiplineSimRunner(framework_version=a.framework_version)
+        runner = ZiplineSimRunner()
+        if a.cmd == "framework-version":
+            print(runner.framework_version())      # 晉升時 registry 的 framework_version 要填這個
+            return 0
+        if not a.strategy_id:
+            ap.error("需要 --strategy-id")
         ex = DryRunExecutor(ledger=DryLedger(a.ledger), runner=runner)
         if a.cmd == "start":
             if not a.start_date:

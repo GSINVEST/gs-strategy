@@ -31,13 +31,13 @@
 
 ## 流程
 
-1. `start`：registry 最新記錄必須是 `promoted`（D1）、目前 `strategy.py`＋`config.yaml` 雜湊必須等於晉升時的雜湊、框架版本必須相符；凍結後寫入 `dry_runs`。
+1. `start`：registry 最新記錄必須是 `promoted`（D1）、目前 `strategy.py`＋`config.yaml` 雜湊必須等於晉升時的雜湊、框架版本必須相符；凍結後寫入 `dry_runs`。框架版本由實際安裝的 zipline 程式碼算出（套件版本＋原始檔雜湊，不接受人工指定）；晉升時 registry 的 `framework_version` 請填 `python -m strategies._common.dryrun framework-version` 的輸出。`run` 每次也會重查 registry，最新記錄不再是此版本的 `promoted` 就暫停。
 2. `run`（每交易日收盤後一次）：
    - 暫停中 → 拒絕；雜湊或框架不符 → 暫停並拒跑（不寫績效）。
    - 沒跑的交易日、資料快照落後的交易日 → 標 `MISSING`，**不補算**；連續缺 3 日 → 暫停（§9.3 的 N，D3 定為 3）。
    - 每個情境從啟動日重放到當日重建狀態，已記錄日期的權益必須與帳本一致（容差 0.01 NTD），否則暫停且不追加（`ReplayMismatch`）。**帳本只追加當日那一列**；啟動日之前沒有任何 dry run 績效。
    - 悲觀 ≤ 基準 ≤ 樂觀不成立時，當日列加 `SCENARIO_NON_MONOTONIC` 旗標。曾有缺漏的 run，其後各列加 `AFTER_GAP`。
-3. `resume`：暫停後須具名的人 resume；雜湊與框架檢查不因 resume 放寬。
+3. `resume`：暫停後須具名的人 resume，並記下當下的最後已記錄日當浮水位，之後只計新的缺漏；雜湊與框架檢查不因 resume 放寬。
 
 ## 與規格 §10 的對照
 

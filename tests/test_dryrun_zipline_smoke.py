@@ -45,14 +45,10 @@ def test_sessions_accepts_plain_dates(runner):
     assert s[0] == "2024-01-02" and s == sorted(s) and len(s) <= 4
 
 
-def test_framework_version_requires_explicit_value_when_metadata_is_blank(monkeypatch):
-    from importlib import metadata
-    from strategies._common.dryrun.zl_adapter import ZiplineSimRunner
-    monkeypatch.delenv("GS_FRAMEWORK_VERSION", raising=False)
-    monkeypatch.setattr(metadata, "version", lambda d: "0.0.0")
-    with pytest.raises(RuntimeError):
-        ZiplineSimRunner().framework_version()
-    assert ZiplineSimRunner(framework_version="zt@abc").framework_version() == "zt@abc"
+def test_framework_version_is_derived_from_installed_code(runner):
+    fw = runner.framework_version()
+    assert "+" in fw and len(fw.split("+")[1]) == 12
+    assert fw == runner.framework_version()
 
 
 def test_same_input_twice_is_identical(runner):
