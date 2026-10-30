@@ -33,6 +33,7 @@ from zipline.finance import slippage as zs  # noqa: E402
 from zipline.finance.commission import PerContract  # noqa: E402
 
 FILLS: list[dict] = []
+NAN_VOL_EVENTS: list[dict] = []
 VOLUME_LIMIT = 0.05
 
 
@@ -55,6 +56,10 @@ class ShimVVS(zs.VolatilityVolumeShare):
         hl = data.current(order.asset, ["high", "low"])
         ref = float(np.mean([hl["high"], hl["low"]]))
         bar_vol = float(data.current(order.asset, "volume"))
+        if os.environ.get("VVS_NAN_GUARD") == "1" and (np.isnan(bar_vol) or np.isnan(ref)):
+            # 診斷用：當 bar 成交量或 (H+L)/2 基準價為 NaN 時略過（原版 `not nan` 為 False，會算出 NaN 成交價）
+            NAN_VOL_EVENTS.append(dict(date=str(data.current_dt.date()), sym=order.asset.symbol))
+            return None, None
         px, amt = super().process_order(data, order)
         if px is not None:
             nodata = (mv == 0) or bool(np.isnan(vol))
@@ -146,6 +151,7 @@ def main() -> None:
                    adv_median=float(v.adv.median()), sigma_median=float(v.sigma.median()),
                    n_nodata_fallback=int(v.nodata.sum()),
                    nodata_dates=v[v.nodata].date.tolist()[:20])
+    res["nan_volume_skips"] = len(NAN_VOL_EVENTS)
     out.write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
     f.to_csv(out.with_suffix(".fills.csv"), index=False)
     print(json.dumps({k: v for k, v in res.items() if k != "nodata_dates"}, ensure_ascii=False))

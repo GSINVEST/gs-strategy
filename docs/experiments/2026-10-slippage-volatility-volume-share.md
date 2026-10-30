@@ -9,7 +9,8 @@
 1. **VVS 在這個 zipline-tej fork 上原樣不能用**：`MarketImpactBase.process_order(self, data, order)` 沒有 fork 新增的 `execution_price_type` 參數，但 `SlippageModel.simulate` 會傳入，回測第一筆委託就丟 `TypeError: MarketImpactBase.process_order() takes 3 positional arguments but 4 were given`（`vgrsi_vvs_raw.json`，只跑 2024-01～06 即可重現）。補一個只轉呼叫的 shim 子類後可正常跑完（vgrsi 2020–2026、tsmom 2018–2026），σ、ADV 皆取得，換月期間**沒有** NaN、沒有例外、沒有落到 `NO_DATA` 後備值（`n_nodata_fallback = 0`）。
 2. **在台指期 1 口的規模下，市場衝擊項小到可忽略，而且小得不合理**：ψ（成交口數 / 20 日 ADV）中位數 2.3e-5（TX，vgrsi）與 1.6e-4（TX＋MTX，tsmom），最大 1.7e-3；預設 eta（0.049）下平均每口滑價 **0.0001–0.0005 點**，全期總成本約 NT$9–35（FixedSlippage 為 NT$26 萬）。eta 加倍結果仍是同一量級。VVS 在此規模等於「零滑價」。
 3. **用 VVS 取代 FixedSlippage 會讓淨報酬與夏普變好，但那是假象**，不是模型更準：它拿掉了每邊 3 點的價差成本，卻沒有補上等價的價差項。
-4. **FixedSlippage 6 點（每邊 3 點）相對 tick 代理偏保守**：Roll 有效價差代理在 TX/MTX 約 0.7–1.5 點（一檔 = 1 點），6 點約為代理的 4–8 倍。不過這是沒有報價的代理，且我們的策略在收盤價成交，有 timing 成本，不應直接把 6 點砍到 1 點（見建議）。
+4. **FixedSlippage 6 點（每邊 3 點）相對 tick 代理偏保守**：Roll 有效價差代理在 TX/MTX 約 0.7–1.5 點（一檔 = 1 點），6 點約為代理的 4–8 倍。不過這是沒有報價的代理。後續驗證（見「後續驗證」）顯示收盤窗代理約 1.0–1.8 點，仍遠低於 6 點，但不應直接把 6 點砍到 1 點（見建議）。
+5. **個股期貨是另一回事**（後續驗證 C）：`xsmom_stkfut_rmt` 在 VVS 下遇 NaN 成交量／基準價會崩潰、出現 75 次 `NO_DATA` 後備、ψ 最大 2.9；而 FixedSlippage(6 點) 讓同策略從 +15%（零滑價）變 −99%。L1 不能把 TX 的點數成本直接套到個股期貨。
 
 ### 對 L1 成本模型的建議
 
@@ -18,6 +19,7 @@
   - 價差項：沿用固定點數，以每邊 `spread/2` 計。預設值先保留 6 點（保守），要調降請等有真實報價或實盤成交資料（見「未能驗證的部分」）；Roll 代理支持把下界設在約 1–2 點、情境分析用 2/4/6 點三檔。
   - 衝擊項：若要保留 √ 形式，eta 必須「校準」而非沿用 0.049。以本實驗的 σ≈0.16、ψ 中位數 2.3e-5 反推，要讓 1 口衝擊等於 3 點（約 1.5 bps）需 eta ≈ 2,000（預設的 4 萬倍）；即使 ψ 取成交量上限 5%，eta 仍需約 42。實務上 1 口規模衝擊項不是主要成本，建議 L1 在預設只放價差項＋成交量上限，衝擊項留作大部位情境的選配開關。
   - 成交量上限：1 口遠低於 5%（ψ ≤ 1.7e-3），不會成為約束；只在部位放大百倍以上才有意義。
+- **個股期貨要另立成本參數**：價差以價格百分比（bp）表達，不沿用 TX 的「點」；對 NaN 成交量／NaN 基準價與 `NO_DATA` 後備路徑明確處理（拒絕成交或套保守成本）；成交量上限必須真正限制 ψ ≥ 1 的訂單。證據見「後續驗證 C」。
 - **若仍要在 zipline 內用 VVS**：需先修 fork（`MarketImpactBase.process_order` 補 `execution_price_type`）。注意 VVS 以 `(high+low)/2` 為基準價，不是收盤價，會讓結果和 FixedSlippage 的基準不同（見下「基準價差異」）。這是 zipline-tej 的改動，不在本實驗範圍，只列為建議。
 
 ## 方法與環境
@@ -40,7 +42,7 @@
 | 換月（continuous future，下單物件為實際合約） | `n_nodata_fallback = 0`、無 NaN；換月後新合約未觸發「歷史不足」後備路徑（由 `n_nodata_fallback=0` 推得，未逐筆檢查換月日） |
 | 單位 | `MI = eta·σ·√ψ` 以 bps 計，σ 是小數：σ=0.16、ψ=1 時 MI 也只有 0.0078 bps，公式本身就讓衝擊極小 |
 
-附帶觀察：bundle 的 TX ADV（約 4.4 萬）比逐筆資料算出的前月日盤成交量（`volume_bs` 約 12–17 萬）低 2–4 倍，`volume_bs` 是否為買賣雙邊合計未能確認；不論取哪個，ψ 都在 1e-3 以下，結論不變。
+附帶觀察：bundle 的 TX ADV（約 4.4 萬）比逐筆資料算出的前月日盤成交量（`volume_bs` 約 12–17 萬）低 2–4 倍，此落差已在「後續驗證 A」查明：`volume_bs` 是雙邊合計（÷2 才是口數），且 bundle 只含日盤。
 
 ## 結果 2：三組成本回測（vgrsi_tx，TX 1 口）
 
@@ -92,15 +94,65 @@
 - 代理有偏誤，方向不一：Roll 對有深度的簿通常**低估**真實成本（沒有納入逆選擇與掃單的價格衝擊；1 秒聚合值高於逐筆值就是旁證）；另一方面它也不含報價資訊，無法區分「價差」與「成交價的資訊性變動」。
 - 我們的策略是日頻、**在收盤價成交**。收盤附近的價差與到達價落差（implementation shortfall）通常比盤中平均價差大，且 dry run 實際下單會有排隊與延遲；因此 6 點比代理保守，但**不能**僅憑這個代理就把它砍到 1–2 點。
 
+## 後續驗證（2026-10-30 補做）
+
+針對原先列為「未能驗證」的項目，能用現有資料驗的都補做了。
+
+### A. `volume_bs` 與 bundle ADV 的差異：已查明
+
+[`bundle_vs_tick_volume.py`](../../scripts/experiments/bundle_vs_tick_volume.py)：把 bundle 的 TX 合約日成交量，與 tick 中同合約同日的 `volume_bs` 對比（2023–2025，870 個合約日）。
+
+- bundle `volume` ÷ tick **日盤** `volume_bs` 的中位數 = **0.50**（四分位距 0.500–0.540；各年中位數 0.501–0.503）。
+- 結論：**`volume_bs` 是買賣雙邊合計（實際口數的 2 倍），bundle 的 `volume` 是單邊日盤口數**。前文「bundle ADV 比 tick 低 2–4 倍」的落差來源：兩倍來自雙邊計數，其餘來自 bundle 不含夜盤。ADV 與 ψ 的數量級因此是一致的，ψ 結論不變。
+- 因此「結果 1」附帶觀察中引用的 tick 成交量（12–17 萬）應除以 2 才是實際口數（約 6–8.5 萬，日盤）；Roll 價差不受影響。
+
+### B. 收盤時段的價差代理
+
+[`tick_close_window.py`](../../scripts/experiments/tick_close_window.py)：Roll（逐筆，近月，日盤）依時段分窗，單位點，逐日共變異數按筆數加權。
+
+| 窗 | TX 2023 | TX 2024 | TX 2025 | MTX 2023 | MTX 2024 | MTX 2025 |
+|---|---:|---:|---:|---:|---:|---:|
+| 開盤 08:45–09:00 | 0.94 | 2.06 | 1.76 | 1.19 | 2.29 | 1.75 |
+| 盤中 09:00–13:30 | 0.70 | 1.00 | 1.05 | 0.82 | 1.03 | 1.12 |
+| 收盤 13:30–13:45 | 0.89 | 1.31 | 1.47 | 0.86 | 1.14 | 1.22 |
+| 收盤 13:40–13:45 | 1.07 | 1.68 | 1.78 | 0.96 | 1.42 | 1.49 |
+
+收盤窗代理約為盤中的 1.2–1.7 倍，最貴的是開盤窗（最高 2.3 點）。最大值 2.3 點仍不到 6 點的一半。收盤窗每天只有約 1,000–1,500 筆（13:40–13:45），單日估計雜訊較大，各窗皆有 ≥ 99% 的交易日共變異數為負。**這仍是成交價代理，不是報價價差**，且沒有納入到達價落差與下單延遲，所以「6 點偏保守」的方向成立，但幅度不能由此確定。
+
+### C. 其餘兩支策略
+
+用相同腳本跑 `cubic_momentum_tx`（TX，2018–2026）與 `xsmom_stkfut_rmt`（個股期貨，2020–2026）。
+
+**cubic_momentum_tx**（TX，955 口）
+
+| 變體 | 淨報酬 | 夏普 | 滑價總成本 NT$ | 每口平均滑價（點） |
+|---|---:|---:|---:|---:|
+| `fixed6` | 102.8% | 0.642 | 573,000 | 3.000 |
+| `vvs_default` | 103.7% | 0.680 | 1,645 | 0.0086 |
+| `vvs_x2` | 103.7% | 0.680 | 1,667 | 0.0087 |
+| `vvs_eta0` | 103.7% | 0.680 | 1,623 | 0.0085 |
+
+與前兩支策略同向。這次出現 **1 次 `NO_DATA` 後備**：2018-04-20 的 `TX201805`，20 日收盤報酬標準差為 NaN，VVS 改用 7.5 bp 的固定衝擊，該筆滑價 8.1 點，**比 eta 衝擊大三個量級**，也比 FixedSlippage 的 3 點大。也就是說，VVS 在 TX 的主要成本其實來自這條後備路徑，不是 eta 公式。
+
+**xsmom_stkfut_rmt**（個股期貨，多至 ~60 個 root）
+
+- **VVS 原樣加 shim 後仍會崩潰**：`ValueError: cannot convert float NaN to integer`，位置在策略 `order_target_percent` 的口數換算。我加了診斷用守衛（`VVS_NAN_GUARD=1`：當 bar 成交量或 (H+L)/2 基準價為 NaN 時略過該筆），守衛後可跑完，共 45 次略過。這證實崩潰來自成交價為 NaN 汙染部位價值，而不是策略邏輯；守衛是我的診斷手段，不是建議的修法。
+- 守衛後 VVS 結果：淨報酬 20.1%、夏普 0.49，3,211 筆、26,339 口；ψ 中位數 0.040、最大 **2.94**（成交量大於 ADV 的 2.9 倍，成交量上限之外也沒擋住）；ADV 中位數僅 83 口；**75 次 `NO_DATA` 後備**。eta 為 0／預設／2 倍的結果幾乎相同（20.10／20.10／20.10%），總滑價點數 35 幾乎全是後備路徑貢獻。
+- **FixedSlippage(6 點) 對個股期貨不適用**：同一策略 `fixed6` 淨報酬 **−99.1%**（夏普 −2.83），`fixed0`（零滑價、同樣收盤價）則是 +15.3%（夏普 0.375）。6 點對股價約數十到數百元的個股期貨是價差的好幾個百分點，這是「點數」單位跨商品沿用造成的問題，不是策略邏輯。注意：`fixed6` 因部位被打爆，成交筆數（492）和 `fixed0`（1,314）不同，不能按成交比較。
+- VVS 守衛版與 `fixed0` 的報酬差（20.1% vs 15.3%）同樣含基準價（(H+L)/2 vs 收盤）效應。
+
+對 L1 的意義：**成本模型不能只為 TX／MTX 設計**。個股期貨需要：(1) 以價格百分比（bp）而非固定點數表達價差；(2) 對 NaN 成交量／NaN 基準價與 `NO_DATA` 後備路徑有明確處理（拒絕成交或保守成本），而不是靠 zipline 預設；(3) 對 ψ ≥ 1 的訂單要有真正生效的成交量上限。
+
 ## 未能驗證的部分
 
 - **沒有買賣報價**：Roll 只是代理，不是有效價差本身。真實的有效價差（成交價對中間價的偏離）需要 L1 報價或實盤／模擬單成交資料，本實驗無法提供。
-- **收盤時點的成本**：本實驗用的是「全日盤中」的價差代理，沒有單獨估收盤前後數分鐘的成本，而策略正是在收盤成交。
-- **市場衝擊的大部位行為**：只測了 1 口規模（tsmom 單次口數未另行統計）。大部位下 √ 衝擊是否成立、eta 的合理值，無資料可校準。
-- **`volume_bs` 的定義**：未確認是否買賣雙邊合計；bundle ADV 與 tick 成交量差 2–4 倍的原因未查明。
-- **單一路徑回測**：兩支策略各一次，未做 bootstrap；報酬差異只作量級參考。
-- **未驗證 fork 修補後的行為**：shim 只是轉呼叫；若日後修 `MarketImpactBase.process_order`，需重跑。
-- **其他策略／商品**：未測 `cubic_momentum_tx`、`xsmom_stkfut_rmt`（個股期貨流動性差很多，ψ 與 NO_DATA 行為可能完全不同）。
+- **到達價落差與下單延遲**：收盤窗代理只反映成交價的彈跳，沒有納入從下單到成交的價格漂移。
+- **大部位下的市場衝擊**：只測了 TX／MTX 1 口等級（及個股期貨小量），√ 衝擊在大部位下是否成立、eta 的合理值，無資料可校準。
+- **單一路徑回測**：每個策略×變體只跑一次，沒有 bootstrap，報酬差異只作量級參考。
+- **fork 修補後的行為**：shim 只是轉呼叫；若日後修 `MarketImpactBase.process_order`，需重跑。個股期貨的 NaN 崩潰也只做了診斷守衛，沒有找出該修在哪一層。
+- **個股期貨的合理價差**：只證明 6 點不適用，沒有為個股期貨估計價差（tick 資料有個股期貨商品但本次沒分析）。
+
+已在「後續驗證」補驗的項目：`volume_bs` 定義與 ADV 差異（A）、收盤時段價差代理（B）、`cubic_momentum_tx` 與 `xsmom_stkfut_rmt`（C）。
 
 ## 如何重現
 
@@ -110,6 +162,8 @@
 python scripts/experiments/slippage_compare.py strategies/vgrsi_tx fixed6 out/vgrsi_fixed6.json
 python scripts/experiments/slippage_compare.py strategies/vgrsi_tx vvs_default out/vgrsi_vvs_default.json
 python scripts/experiments/tick_spread_proxy.py <QUANTDATA>/silver/ticks/taifex_futures 2023 2024 2025
+python scripts/experiments/tick_close_window.py <QUANTDATA>/silver/ticks/taifex_futures 2023 2024 2025
+VVS_NAN_GUARD=1 python scripts/experiments/slippage_compare.py strategies/xsmom_stkfut_rmt vvs_default out/x.json
 ```
 
 tick 腳本需 `pyarrow`、`pandas`；`partitioning=None` 是因為 hive 路徑 `year=...` 會與檔內的 `year` 欄位型別衝突。
