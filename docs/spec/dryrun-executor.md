@@ -110,6 +110,8 @@ DRYRUN_DOCKER_TESTS=1 pytest tests/test_dryrun_container.py          # 同上，
 - 有警告以上：追加到 `DRYRUN_ALERT_LOG`（預設 `~/.local/state/gs-dryrun/alerts.log`），並把訊息從 stdin 餵給環境變數 `DRYRUN_ALERT_CMD`（例如你的 Slack／mail 小工具；通知指令失敗只印 stderr，不影響檢查）。
 - 已實跑（WSL、系統 python3.12）：備份成功並產出檔案、缺漏 1 日回 WARN 並寫入 alert log、帳本不存在回 CRIT；單元測試 11 項。**未驗證**：`DRYRUN_ALERT_CMD` 接真實通知通道、cron 下的環境變數。
 
+**接通知通道**：把 `scripts/dryrun_notify_slack.example.sh` 複製到 `~/.config/gs-dryrun/notify`（權限 700），webhook URL 另存 `~/.config/gs-dryrun/slack_webhook`（權限 600）。`dryrun_run_daily.sh` 偵測到 `notify` 可執行就自動設成 `DRYRUN_ALERT_CMD`；也可自備任何從 stdin 讀訊息的指令。範例腳本只驗過語法，**沒有實際對 Slack 送過**。
+
 ## 排程
 
 ```bash
