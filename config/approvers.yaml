@@ -1,0 +1,5 @@
+# 提交佇列的核准者（比對 CLI 的 --as 字串；不是身分驗證，見 docs/spec/strategy-submission-queue.md §4）。
+# 名單是暫定值，沿用 genesis-deck 模型的 kevin／admin，使用前請確認。
+approvers:
+  - kevin
+  - admin

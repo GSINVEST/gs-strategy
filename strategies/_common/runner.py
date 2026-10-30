@@ -64,7 +64,13 @@ def run_strategy_from_config(
     strategy_path: str | Path,
     config_path: str | Path,
     output_path: str | Path | None = None,
+    *,
+    n_trials: int | None = None,
+    approved_trial_id: str | None = None,
 ):
+    # strategies/_submitted/ 底下的策略只能經提交佇列的核准路徑執行；其他路徑不受影響。
+    from strategies._common.submission.guard import require_approved_for_submitted
+    require_approved_for_submitted(strategy_path, approved_trial_id)
     cfg = load_config(config_path)
 
     start = pd.Timestamp(cfg["start"], tz="UTC")
@@ -122,7 +128,11 @@ def run_strategy_from_config(
                 # Do not pre-resolve periods_per_year here: the annualisation
                 # factor is measured from the perf frame's own timestamps, and
                 # only write_sidecar_for has the frame loaded.
-                n_trials, n_trials_source = _validation.resolve_n_trials(cfg)
+                if n_trials is not None:
+                    # 佇列傳入 ledger 的 selection 數；不是 config/env 自報的數字。
+                    n_trials, n_trials_source = int(n_trials), "ledger"
+                else:
+                    n_trials, n_trials_source = _validation.resolve_n_trials(cfg)
                 manifest = Path(strategy_path).resolve().parent / "manifest.yaml"
                 sidecar = _validation.write_sidecar_for(
                     out,
