@@ -4,11 +4,12 @@
 > 分診工具：`scripts/triage_generated.py`
 > 相關計畫：gs-bulltrap-plan/docs/PLAN-auto-research-loop.md（M7–M13）
 
-> **模組可用性（2026-09-01 查證）**：`reality_check.py`（White RC / Hansen SPA /
+> **模組可用性（2026-10-30 查證）**：`reality_check.py`（White RC / Hansen SPA /
 > Romano-Wolf StepM）與 `tradability.py`（VR / Hurst / permutation entropy /
-> Ljung-Box / runs test）**目前只存在於未合併的 `dev/pv-mtf-mdd-disposition`**，
-> `main` 上沒有。本文件先前把它們寫成現成可用，那是錯的。凡是依賴這兩支的
-> 環節（L2 標的可交易性、`best_of_M` 的 SPA/RC 腿），要等那條分支落地才跑得動。
+> Ljung-Box / runs test）**已於 2026-10-02 隨 PR #28（`dev/pv-mtf-mdd-disposition`）
+> 併入 `main`**。2026-09-01 的舊註記（「只存在於未合併分支」）已過時。依賴這兩支的
+> 環節（L2 標的可交易性、`best_of_M` 的 SPA/RC 腿）現在可在 `main` 上跑；
+> Ljung-Box 需要 `statsmodels`（已列於 `requirements-test.txt`）。
 
 ---
 
@@ -294,10 +295,9 @@ UTF-8 被誤以 latin-1 解碼後再編碼（mojibake）。
 
 **待做**
 
-1. L2 的 `ta_suitability` 接成可重跑的 CLI——但它在未合併的分支上（見開頭註記）
+1. L2 的 `ta_suitability` 接成可重跑的 CLI（模組已在 `main`，見開頭註記；CLI 尚未做）
 2. `stat_gate` 作為 CI required check：不過門檻就 exit 1
-3. 把 `dev/pv-mtf-mdd-disposition` 的 `reality_check.py` / `tradability.py` 落地到
-   `main`，否則 L2 與 `best_of_M` 的 SPA 腿都跑不動
+3. ~~把 `reality_check.py` / `tradability.py` 落地到 `main`~~——已於 2026-10-02 隨 PR #28 完成
 
 **卡住、需要人決定的**
 

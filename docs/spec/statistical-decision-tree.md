@@ -4,11 +4,12 @@
 > 實作：`strategies/_common/validation/decision.py`
 > 依據：《策略研究統計檢定規範 v1.1》（gs-bulltrap-plan/docs/統計檢定規範.md）
 
-> **模組可用性（2026-09-01 查證）**：`reality_check.py`（White RC / Hansen SPA /
+> **模組可用性（2026-10-30 查證）**：`reality_check.py`（White RC / Hansen SPA /
 > Romano-Wolf StepM）與 `tradability.py`（VR / Hurst / permutation entropy /
-> Ljung-Box / runs test）**目前只存在於未合併的 `dev/pv-mtf-mdd-disposition`**，
-> `main` 上沒有。本文件先前把它們寫成現成可用，那是錯的。凡是依賴這兩支的
-> 環節（L2 標的可交易性、`best_of_M` 的 SPA/RC 腿），要等那條分支落地才跑得動。
+> Ljung-Box / runs test）**已於 2026-10-02 隨 PR #28（`dev/pv-mtf-mdd-disposition`）
+> 併入 `main`**。2026-09-01 的舊註記（「只存在於未合併分支」）已過時。依賴這兩支的
+> 環節（L2 標的可交易性、`best_of_M` 的 SPA/RC 腿）現在可在 `main` 上跑；
+> Ljung-Box 需要 `statsmodels`（已列於 `requirements-test.txt`）。
 
 ---
 
