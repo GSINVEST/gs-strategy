@@ -1,0 +1,170 @@
+{
+ "TX_2023_open_0845_0900": {
+  "days": 239,
+  "trades_per_day": 3599,
+  "pooled_cov": -0.2214,
+  "roll": 0.941,
+  "neg_days_pct": 100.0
+ },
+ "TX_2023_mid_0900_1330": {
+  "days": 239,
+  "trades_per_day": 42624,
+  "pooled_cov": -0.1232,
+  "roll": 0.702,
+  "neg_days_pct": 100.0
+ },
+ "TX_2023_close_1330_1345": {
+  "days": 236,
+  "trades_per_day": 2675,
+  "pooled_cov": -0.197,
+  "roll": 0.888,
+  "neg_days_pct": 100.0
+ },
+ "TX_2023_close_1340_1345": {
+  "days": 239,
+  "trades_per_day": 1139,
+  "pooled_cov": -0.2836,
+  "roll": 1.065,
+  "neg_days_pct": 100.0
+ },
+ "TX_2024_open_0845_0900": {
+  "days": 241,
+  "trades_per_day": 4606,
+  "pooled_cov": -1.0556,
+  "roll": 2.055,
+  "neg_days_pct": 100.0
+ },
+ "TX_2024_mid_0900_1330": {
+  "days": 241,
+  "trades_per_day": 49944,
+  "pooled_cov": -0.2492,
+  "roll": 0.998,
+  "neg_days_pct": 100.0
+ },
+ "TX_2024_close_1330_1345": {
+  "days": 241,
+  "trades_per_day": 3187,
+  "pooled_cov": -0.4296,
+  "roll": 1.311,
+  "neg_days_pct": 100.0
+ },
+ "TX_2024_close_1340_1345": {
+  "days": 241,
+  "trades_per_day": 1330,
+  "pooled_cov": -0.7084,
+  "roll": 1.683,
+  "neg_days_pct": 99.6
+ },
+ "TX_2025_open_0845_0900": {
+  "days": 243,
+  "trades_per_day": 3488,
+  "pooled_cov": -0.7732,
+  "roll": 1.759,
+  "neg_days_pct": 99.2
+ },
+ "TX_2025_mid_0900_1330": {
+  "days": 243,
+  "trades_per_day": 36234,
+  "pooled_cov": -0.2728,
+  "roll": 1.045,
+  "neg_days_pct": 99.2
+ },
+ "TX_2025_close_1330_1345": {
+  "days": 237,
+  "trades_per_day": 3336,
+  "pooled_cov": -0.5384,
+  "roll": 1.468,
+  "neg_days_pct": 100.0
+ },
+ "TX_2025_close_1340_1345": {
+  "days": 241,
+  "trades_per_day": 1554,
+  "pooled_cov": -0.7896,
+  "roll": 1.777,
+  "neg_days_pct": 100.0
+ },
+ "MTX_2023_open_0845_0900": {
+  "days": 239,
+  "trades_per_day": 7668,
+  "pooled_cov": -0.3547,
+  "roll": 1.191,
+  "neg_days_pct": 100.0
+ },
+ "MTX_2023_mid_0900_1330": {
+  "days": 239,
+  "trades_per_day": 79905,
+  "pooled_cov": -0.1683,
+  "roll": 0.821,
+  "neg_days_pct": 100.0
+ },
+ "MTX_2023_close_1330_1345": {
+  "days": 237,
+  "trades_per_day": 3120,
+  "pooled_cov": -0.1856,
+  "roll": 0.862,
+  "neg_days_pct": 100.0
+ },
+ "MTX_2023_close_1340_1345": {
+  "days": 239,
+  "trades_per_day": 1053,
+  "pooled_cov": -0.2289,
+  "roll": 0.957,
+  "neg_days_pct": 100.0
+ },
+ "MTX_2024_open_0845_0900": {
+  "days": 241,
+  "trades_per_day": 9875,
+  "pooled_cov": -1.3056,
+  "roll": 2.285,
+  "neg_days_pct": 100.0
+ },
+ "MTX_2024_mid_0900_1330": {
+  "days": 241,
+  "trades_per_day": 98503,
+  "pooled_cov": -0.2666,
+  "roll": 1.033,
+  "neg_days_pct": 100.0
+ },
+ "MTX_2024_close_1330_1345": {
+  "days": 241,
+  "trades_per_day": 3905,
+  "pooled_cov": -0.3256,
+  "roll": 1.141,
+  "neg_days_pct": 100.0
+ },
+ "MTX_2024_close_1340_1345": {
+  "days": 241,
+  "trades_per_day": 1205,
+  "pooled_cov": -0.5007,
+  "roll": 1.415,
+  "neg_days_pct": 99.6
+ },
+ "MTX_2025_open_0845_0900": {
+  "days": 243,
+  "trades_per_day": 7918,
+  "pooled_cov": -0.7624,
+  "roll": 1.746,
+  "neg_days_pct": 99.2
+ },
+ "MTX_2025_mid_0900_1330": {
+  "days": 243,
+  "trades_per_day": 72082,
+  "pooled_cov": -0.311,
+  "roll": 1.115,
+  "neg_days_pct": 99.2
+ },
+ "MTX_2025_close_1330_1345": {
+  "days": 239,
+  "trades_per_day": 3484,
+  "pooled_cov": -0.3703,
+  "roll": 1.217,
+  "neg_days_pct": 100.0
+ },
+ "MTX_2025_close_1340_1345": {
+  "days": 241,
+  "trades_per_day": 1067,
+  "pooled_cov": -0.5576,
+  "roll": 1.493,
+  "neg_days_pct": 100.0
+ }
+}

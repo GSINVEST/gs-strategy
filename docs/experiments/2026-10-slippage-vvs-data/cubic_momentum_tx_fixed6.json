@@ -1,0 +1,20 @@
+{
+ "variant": "fixed6",
+ "model": "LoggedFixed(spread=6.0)",
+ "strategy": "cubic_momentum_tx",
+ "start": "2018-01-01",
+ "end": "2026-04-30",
+ "final_value": 10141400.0,
+ "net_return_pct": 102.828,
+ "sharpe_ann": 0.6418366171573882,
+ "n_days": 2023,
+ "n_fills": 789,
+ "contracts_traded": 955.0,
+ "slip_total_pts": 2865.0,
+ "slip_total_ntd": 573000.0,
+ "slip_mean_pts_per_contract": 3.0,
+ "slip_max_pts": 3.0,
+ "roots": [
+  "TX"
+ ]
+}

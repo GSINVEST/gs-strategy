@@ -1,0 +1,16 @@
+{
+ "variant": "vvs_x2",
+ "model": "ShimVVS(volume_limit=0.05, eta=0.09803628645003967)",
+ "strategy": "xsmom_stkfut_rmt",
+ "start": "2020-01-01",
+ "end": "2026-04-30",
+ "error": "ValueError: cannot convert float NaN to integer",
+ "traceback_tail": [
+  "    return int(round_if_near_integer(amount))",
+  "               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+  "  File \"/home/kevin/exp-vvs/.venv/lib/python3.11/site-packages/zipline/utils/math_utils.py\", line 82, in round_if_near_integer",
+  "    if abs(a - round(a)) <= epsilon:",
+  "               ^^^^^^^^",
+  "ValueError: cannot convert float NaN to integer"
+ ]
+}
