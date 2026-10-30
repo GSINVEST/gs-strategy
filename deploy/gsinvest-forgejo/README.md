@@ -61,6 +61,17 @@ gsinvest 環境（2026-10-30）：docker 29.4 + compose v5.1、磁碟剩 6.5T、
 - 備份通道已建並實跑一次成功；還原演練已做（bundle 還原後 `origin/main` 與 Forgejo 一致、fsck 通過）。
 - **尚未做**：joker／jason 帳號、備份保留／輪替策略、DNS／CF Access（步驟 12）。
 
+## GitHub → Forgejo 單向同步（2026-10-30）
+
+GitHub 是程式碼的權威。gsinvest 的 user-systemd timer 每 15 分鐘執行 `sync/gs-forgejo-sync.sh`，在 Forgejo 容器內以 **read-only deploy key**
+對 `GSINVEST/gs-strategy` 做 fetch：`main` 只允許 fast-forward（GitHub 的 main 被改寫時會失敗並留下紀錄，不靜默覆蓋）；其他分支與 GitHub 對齊；不刪分支；tag 只新增。
+此同步刻意繞過 pre-receive（管理員同步）。不使用 Forgejo 內建 pull mirror，因為它會讓 repo 唯讀，使登記推送與 hook 失去意義。
+
+設定：容器內 `/data/gs-sync/`（0700，git 擁有）放 `id_deploy`、`known_hosts`；公鑰以 **Deploy key（不勾 write）** 加到 **GitHub** 的 `GSINVEST/gs-strategy`
+（注意不是 Forgejo 自己的部署金鑰頁）。安裝 `.service`/`.timer` 到 `~/.config/systemd/user/` 後 `systemctl --user enable --now gs-forgejo-sync.timer`。
+
+已知限制：繞過 hook 的同步不會觸發 Forgejo 的 post-receive，網頁分支清單可能落後 git 實際 refs（內容與 `main` 正確）；重啟 Forgejo 或其內建分支同步可補齊。
+
 ## 二、驗證
 
 本機（不需 Forgejo）：`pytest deploy/gsinvest-forgejo/hooks/test_pre_receive.py` ——用暫時 bare repo 驗：
