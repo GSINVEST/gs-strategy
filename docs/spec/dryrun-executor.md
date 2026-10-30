@@ -31,13 +31,13 @@
 
 ## 流程
 
-1. `start`：registry 最新記錄必須是 `promoted`（D1）、目前 `strategy.py`＋`config.yaml` 雜湊必須等於晉升時的雜湊、框架版本必須相符；凍結後寫入 `dry_runs`。
+1. `start`：registry 最新記錄必須是 `promoted`（D1）、目前 `strategy.py`＋`config.yaml` 雜湊必須等於晉升時的雜湊、框架版本必須相符；凍結後寫入 `dry_runs`。框架版本由實際安裝的 zipline 程式碼算出（套件版本＋原始檔雜湊，不接受人工指定）；晉升時 registry 的 `framework_version` 請填 `python -m strategies._common.dryrun framework-version` 的輸出。`run` 每次也會重查 registry，最新記錄不再是此版本的 `promoted` 就暫停。
 2. `run`（每交易日收盤後一次）：
    - 暫停中 → 拒絕；雜湊或框架不符 → 暫停並拒跑（不寫績效）。
    - 沒跑的交易日、資料快照落後的交易日 → 標 `MISSING`，**不補算**；連續缺 3 日 → 暫停（§9.3 的 N，D3 定為 3）。
    - 每個情境從啟動日重放到當日重建狀態，已記錄日期的權益必須與帳本一致（容差 0.01 NTD），否則暫停且不追加（`ReplayMismatch`）。**帳本只追加當日那一列**；啟動日之前沒有任何 dry run 績效。
    - 悲觀 ≤ 基準 ≤ 樂觀不成立時，當日列加 `SCENARIO_NON_MONOTONIC` 旗標。曾有缺漏的 run，其後各列加 `AFTER_GAP`。
-3. `resume`：暫停後須具名的人 resume；雜湊與框架檢查不因 resume 放寬。
+3. `resume`：暫停後須具名的人 resume，並記下當下的最後已記錄日當浮水位，之後只計新的缺漏；雜湊與框架檢查不因 resume 放寬。
 
 ## 與規格 §10 的對照
 
@@ -52,12 +52,69 @@
 | 7 | `LIFECYCLE_TRANSITIONS` 無 live | 同上 |
 | 8 | `check_run_layout`（名稱含 `dry`、目錄內不得有 live／broker／`.pfx` 設定檔） | 同上 |
 
-**限制**：3 的行程內攔截只是第二道防線，容器網路策略才是真正的出口封鎖，本 PR 沒有提供；4 的「實單側拒絕」只提供函式，實單程式是否採用不在本 repo；§10 第 9 項（桌面版／gateway 無下單端點）屬 genesis-deck。
+**限制**：3 的行程內攔截只是第二道防線，真正的出口封鎖是下面「容器隔離」的 internal 網路加白名單代理；4 的「實單側拒絕」只提供函式，實單程式是否採用不在本 repo；§10 第 9 項（桌面版／gateway 無下單端點）屬 genesis-deck。
 
 ## 未涵蓋
 
 - D2 benchmark 包（stub 介面而已）；D4 滑價校準；D5 gateway／桌面版。
 - 個股期貨（需百分比價差與成交量上限驗證後再加）。
-- 容器層網路隔離、排程（cron／systemd）設定。
+- 排程「已提供安裝腳本但未啟用」（見下）；沒有告警通知（暫停只寫 `dry_events`，需要人去看）。
 - 到達價落差、下單延遲、盤後時段（bundle 只含日盤）。
 - 衝擊項 eta 校準（預設關閉）。
+
+## 操作方式
+
+```bash
+# 查框架版本字串（晉升時 registry 的 framework_version 填這個）
+python -m strategies._common.dryrun framework-version
+# 啟動一支已晉升的策略（需 registry 最新記錄為 promoted，且內容雜湊相符）
+python -m strategies._common.dryrun start --strategy-id vgrsi_tx --start-date 2026-11-03
+# 跑最近一個已收盤的交易日（也可 --session YYYY-MM-DD）
+python -m strategies._common.dryrun run --strategy-id vgrsi_tx
+# 暫停後恢復（具名；之後只計新的缺漏）
+python -m strategies._common.dryrun resume --strategy-id vgrsi_tx --by <人> --note <原因>
+```
+
+正式運行一律走容器（下節），不要在有券商憑證的使用者環境直接跑。`run` 預設的目標日是「台北時間最近一個已收盤（13:45 後）的交易日」，所以資料落後時會標 `MISSING`，不會悄悄重跑舊日。
+
+## 容器隔離（§10 第 3 項）
+
+檔案在 `dockerfile/dryrun/`：
+
+| 檔 | 作用 |
+|---|---|
+| `Dockerfile` | python 3.11；依賴鎖在 `requirements.lock`（來自已驗證可跑的環境）；zipline-tej 以具名 build context 傳入固定 commit；非 root；不含任何金鑰 |
+| `compose.yml` | `dryrun` 只掛在 `internal: true` 的 `dry_internal` 網路（沒有任何直連外網的路）；唯一出口是同網路上的 `egress-proxy`；唯讀 rootfs、`cap_drop: ALL`、`no-new-privileges`；掛載只有 repo（ro）、bundle（ro）、帳本目錄（rw bind mount，主機路徑由 `DRYRUN_LEDGER_DIR` 指定，預設 `~/.local/share/gs-dryrun`，容器內 `/dryrun-ledger`）；容器以主機使用者的 uid 執行才讀得到權限 700 的 bundle |
+| `Dockerfile.proxy`、`squid.conf` | 白名單代理：只放行 CONNECT 443 到 `api.tej.com.tw`，其餘 `deny all`。要加網域必須改這個檔並走 PR |
+| `egress_probe.py`、`verify-egress.sh` | 容器內探針：直連 1.1.1.1／8.8.8.8／TEJ／券商網域必須失敗；經代理到 TEJ 通、到 example.com 與券商網域被拒；無券商憑證、無 `/mnt/c`、非 root；`/app`、`/zipline/data` 唯讀、只有 `/dryrun-ledger` 可寫 |
+
+建置與驗證：
+
+```bash
+git -C <zipline-tej 倉庫> archive <commit> | tar -x -C /tmp/zl      # 乾淨原始碼（無 .git）
+docker build -f dockerfile/dryrun/Dockerfile --build-context zl=/tmp/zl -t gs-dryrun:local .
+bash dockerfile/dryrun/verify-egress.sh                              # 實跑封鎖驗證
+DRYRUN_DOCKER_TESTS=1 pytest tests/test_dryrun_container.py          # 同上，包成測試
+```
+
+`TEJAPI_KEY`／`TEJAPI_BASE` 只放在 `DRYRUN_ENV_FILE`（只含這兩個變數的檔，權限 600），由 compose 的 `env_file` 注入，不進 image、不進 repo。
+
+已實跑驗證（本機 WSL docker，2026-10-30）：`verify-egress.sh` 17/17；容器內以合成的 promoted 記錄（僅測試用、在暫存 repo 副本）走 `start`→`run`×2，三情境皆 `OK`，帳本只有 `mode=DRY`，rootfs 與 `/zipline/data` 唯讀（`/zipline` 為 tmpfs，因 zipline 啟動會在 ZIPLINE_ROOT 建 `extension.py`）。**未驗證**：真實 promoted 策略、排程實際觸發（尚未 apply）、長期運行。
+
+## 排程
+
+```bash
+scripts/dryrun_schedule.sh install --repo <dry run 專用乾淨 checkout> [--env-file F] [--zipline-data DIR]   # 只印出，不生效
+scripts/dryrun_schedule.sh install --repo <...> --apply                                                      # 才真的寫入 crontab
+scripts/dryrun_schedule.sh remove --apply
+```
+
+週二至週六 07:30（WSL 時區須為 Asia/Taipei）。**不是收盤後立刻跑**：bundle 由 Windows 工作排程 `gs-zipline-tej-bundle-daily` 在每天 06:00 更新，當天收盤的資料要到隔天早上才進 bundle，收盤後跑只會把當天標成 `MISSING`（且 `MISSING` 不補算，見流程）。入口是 `scripts/dryrun_run_daily.sh`，在容器內逐策略執行；沒有 promoted 記錄的策略會失敗並記錄，不影響其他策略。
+
+## 已知缺口
+
+- **還沒有任何策略被晉升**（`log/promotions.jsonl` 不存在），所以排程啟用後每支策略都會因 `NotPromoted` 失敗，直到人完成 D1 的 screened → promote。
+- 網路層隔離靠 `internal` 網路，不是代理；代理只負責「唯一的出口」只放行 TEJ。Docker `internal` 網路的效力取決於 docker 主機設定，已在本機 WSL docker 實跑一次，其他主機需重跑 `verify-egress.sh`。
+- Windows 主機的 `C:/Users/User/.shioaji` 存在券商憑證。容器沒有掛載它，但**不要**把 `DRYRUN_REPO`／`ZIPLINE_DATA` 指到含該路徑的目錄，也不要在容器外（WSL 直接）跑 dry run。
+- 沒有告警（暫停、缺漏只寫帳本事件）；沒有帳本備份；帳本是主機目錄裡的 SQLite 檔，刪檔即失去帳本（trigger 防不了刪檔）；`scripts/dryrun_schedule.sh` 的 `--ledger-dir` 可改位置。
+- 容器內 `api.tej.com.tw` 是目前已知唯一必要主機；若 zipline-tej 日後新增其他主機，連線會失敗，需更新 `squid.conf`。

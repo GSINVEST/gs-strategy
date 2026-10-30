@@ -56,6 +56,14 @@ class DayOutcome:
     detail: str = ""
 
 
+def last_completed_session(sessions: list, *, today: str, hhmm: str, close: str = "13:45") -> str:
+    """排程用：最近一個「已收盤」的交易日。當天要到 close 之後才算已完成。"""
+    done = [x for x in sessions if x < today or (x == today and hhmm >= close)]
+    if not done:
+        raise ValueError("沒有已收盤的交易日可跑")
+    return max(done)
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -118,7 +126,9 @@ class DryRunExecutor:
         run = self.ledger.find_run(strategy_id)
         if run is None:
             raise DryRunError(f"{strategy_id}: 沒有 dry run")
-        self.ledger.append_event(run["run_id"], self.now(), "RESUMED", f"by={by}; {note}")
+        mark = self.ledger.last_recorded_session(run["run_id"])
+        self.ledger.append_event(run["run_id"], self.now(), "RESUMED",
+                                 f"watermark={mark}; by={by}; {note}")
 
     # --- 每日 -------------------------------------------------------------
     def run_day(self, strategy_id: str, session: str) -> DayOutcome:
@@ -131,6 +141,10 @@ class DryRunExecutor:
         if self.ledger.is_paused(run_id):
             raise Paused(f"{strategy_id}: 已暫停，須人工 resume")
 
+        promo = latest(strategy_id, self.registry)
+        if promo is None or promo.get("event") != "promoted" or promo["strategy_sha256"] != sha:
+            self._pause(run_id, "NO_LONGER_PROMOTED")
+            raise NotPromoted(f"{strategy_id}: registry 最新記錄已不是此版本的 promoted，暫停")
         if strategy_sha256(sdir) != sha:
             self._pause(run_id, "FROZEN_HASH_MISMATCH")
             raise FrozenHashMismatch(f"{strategy_id}: 策略內容與凍結雜湊不符，拒跑並暫停")

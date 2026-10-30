@@ -258,6 +258,9 @@ def test_three_consecutive_missing_pauses(world):
         e.run_day("vgrsi_tx", "2026-03-09")
     e.resume("vgrsi_tx", by="admin", note="data restored")
     assert rows(ledger, "dry_events")[-1]["kind"] == "RESUMED"
+    # 審查抓到的 blocker：暫停後 resume 必須真的能繼續跑，而不是立刻又暫停
+    assert e.run_day("vgrsi_tx", "2026-03-09").status == "OK"
+    assert e.run_day("vgrsi_tx", "2026-03-10").status == "OK"
 
 
 # --- 重放對帳：資料被改寫時不得悄悄蓋掉已記錄的績效 ---------------------------------
@@ -323,3 +326,23 @@ def test_selfcheck_failure_blocks_everything(world):
     with pytest.raises(SelfCheckError):
         start(e)
     assert rows(ledger, "dry_runs") == [] and runner.calls == []
+
+
+def test_resume_after_gap_pause_recovers_on_the_same_day(world):
+    e, ledger, _ = make(world, max_consecutive_missing=3)
+    start(e)
+    e.run_day("vgrsi_tx", "2026-03-02")
+    with pytest.raises(ex.Paused):
+        e.run_day("vgrsi_tx", "2026-03-06")
+    e.resume("vgrsi_tx", by="admin", note="ok")
+    assert e.run_day("vgrsi_tx", "2026-03-06").status == "OK"
+
+
+def test_demoted_strategy_stops_running(world):
+    e, ledger, runner = make(world)
+    start(e)
+    _append(world["reg"], {"event": "screened", "strategy_id": "vgrsi_tx",
+                           "strategy_sha256": world["sha"]})
+    with pytest.raises(ex.NotPromoted):
+        e.run_day("vgrsi_tx", "2026-03-02")
+    assert runner.calls == [] and rows(ledger, "dry_events")[-1]["kind"] == "PAUSED"

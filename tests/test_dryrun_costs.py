@@ -127,3 +127,8 @@ def test_bad_inputs_raise():
         _fill(qty=0)
     with pytest.raises(ValueError):
         _fill(side=0)
+
+
+def test_infinite_inputs_are_rejected_not_crashing():
+    assert _fill(bar_volume=float("inf")).reason == "NAN_VOLUME"
+    assert _fill(ref_price=float("inf")).reason == "NAN_PRICE"

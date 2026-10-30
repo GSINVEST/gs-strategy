@@ -119,26 +119,26 @@ def _load_futures_setup():
 class ZiplineSimRunner:
     """實作 executor.SimRunner。需要 TEJAPI_KEY、網路（TEJ 交易日曆）與 tquant_future bundle。"""
 
-    def __init__(self, bundle: str = "tquant_future", calendar: str = "TEJ_morning_future",
-                 framework_version: Optional[str] = None):
+    def __init__(self, bundle: str = "tquant_future", calendar: str = "TEJ_morning_future"):
         self.bundle, self.calendar_name = bundle, calendar
-        self._fw = framework_version
 
     def framework_version(self) -> str:
-        """框架版本字串須與晉升記錄一致。fork 的套件 metadata 常是 0.0.0（沒有鑑別力），
-        所以那種情況要求明確指定（參數或 GS_FRAMEWORK_VERSION，建議填 zipline-tej 的 commit）。"""
-        fw = self._fw or os.environ.get("GS_FRAMEWORK_VERSION")
-        if fw:
-            return fw
+        """由**實際安裝的程式碼**算出：套件版本（fork 常是 0.0.0）＋ zipline 套件 .py 檔的雜湊。
+        不接受人工指定，否則凍結檢查只是在比對操作者輸入的字串。"""
+        import hashlib
+        import zipline
+        root = Path(zipline.__file__).resolve().parent
+        h = hashlib.sha256()
+        for f in sorted(root.rglob("*.py")):
+            h.update(f.relative_to(root).as_posix().encode() + b"|" + f.read_bytes() + b"|")
+        ver = "unknown"
         for dist in ("zipline-tej", "zipline-reloaded", "zipline"):
             try:
-                ver = metadata.version(dist)
+                ver = f"{dist} {metadata.version(dist)}"
+                break
             except metadata.PackageNotFoundError:
                 continue
-            if ver not in ("0.0.0", "0.0.0.dev0"):
-                return f"{dist} {ver}"
-        raise RuntimeError("zipline 套件版本沒有鑑別力（0.0.0 或找不到）；"
-                           "請以 framework_version 參數或 GS_FRAMEWORK_VERSION 明確指定（建議 zipline-tej commit）")
+        return f"{ver}+{h.hexdigest()[:12]}"
 
     def sessions(self, start: str, end: str) -> list:
         import pandas as pd
