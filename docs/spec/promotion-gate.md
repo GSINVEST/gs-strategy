@@ -72,3 +72,7 @@ GS_PROMOTERS=kevin python scripts/promotion_gate.py promote --strategy-dir strat
 ```
 
 結束碼：0 成功、2 被拒（`PromotionError`）、3 輸入錯誤。`--perf`／`--stress` 為含 `returns` 欄的 parquet；`--candidates` 為 T×N 的 parquet。
+
+## 7. 餵入 SPA p 值的注意事項
+
+`--spa-p` 的數值由外部提供。`reality_check.hansens_spa()` 回傳 `p_lower`／`p_consistent`／`p_upper` 三個值，**不得挑最小的 `p_lower`**：合成資料實測（500 筆、1 個弱正報酬候選＋40 個明顯虧損候選）`p_lower=0.047`（會通過 0.05）但 `p_consistent=0.135`、`p_upper=0.784`。Hansen 建議用 `p_consistent`；`p_upper` 最保守。D1 未規定用哪一個，待正式接線時決定，但門檻只准收緊，所以不得用 `p_lower`。
