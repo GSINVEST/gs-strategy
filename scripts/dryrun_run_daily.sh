@@ -25,6 +25,10 @@ fi
 LEDGER="$DRYRUN_LEDGER_DIR/dry_ledger.sqlite"
 BACKUP_DIR="${DRYRUN_BACKUP_DIR:-$HOME/.local/share/gs-dryrun-backup}"
 ALERT_LOG="${DRYRUN_ALERT_LOG:-$HOME/.local/state/gs-dryrun/alerts.log}"
+# 通知通道：呼叫端沒指定 DRYRUN_ALERT_CMD 時，若 ~/.config/gs-dryrun/notify 可執行就用它（範例見 dryrun_notify_slack.example.sh）
+if [ -z "${DRYRUN_ALERT_CMD:-}" ] && [ -x "$HOME/.config/gs-dryrun/notify" ]; then
+  export DRYRUN_ALERT_CMD="$HOME/.config/gs-dryrun/notify"
+fi
 cd "$DRYRUN_REPO" || exit 1
 python3 -m strategies._common.dryrun.ops backup --ledger "$LEDGER" --dest "$BACKUP_DIR" || rc=2
 python3 -m strategies._common.dryrun.ops health --ledger "$LEDGER" --alert-log "$ALERT_LOG"

@@ -81,3 +81,21 @@ def test_daily_script_runs_backup_and_health_on_host():
     s = (D.parents[1] / "scripts" / "dryrun_run_daily.sh").read_text(encoding="utf-8")
     assert "dryrun.ops backup" in s and "dryrun.ops health" in s
     assert "docker compose run" in s and s.index("dryrun.ops backup") > s.index("docker compose run")
+
+
+def test_cron_entry_scripts_are_executable_in_git():
+    """cron 直接執行腳本；git 裡沒有 +x 的話排程會 Permission denied（Windows 建檔最常漏）。"""
+    if shutil.which("git") is None:
+        pytest.skip("no git")
+    root = D.parents[1]
+    out = subprocess.run(["git", "ls-files", "-s", "scripts/dryrun_run_daily.sh", "scripts/dryrun_schedule.sh",
+                          "dockerfile/dryrun/verify-egress.sh"], cwd=root, capture_output=True, text=True)
+    if out.returncode != 0 or not out.stdout.strip():
+        pytest.skip("not a git checkout")
+    modes = {line.split()[3]: line.split()[0] for line in out.stdout.splitlines()}
+    assert all(m == "100755" for m in modes.values()), modes
+
+
+def test_daily_script_picks_up_default_notify_command():
+    s = (D.parents[1] / "scripts" / "dryrun_run_daily.sh").read_text(encoding="utf-8")
+    assert ".config/gs-dryrun/notify" in s and "DRYRUN_ALERT_CMD" in s
