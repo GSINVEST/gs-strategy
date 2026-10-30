@@ -44,3 +44,4 @@ strategies/_generated/
 
 # quantdata query cache (content-addressed, regenerable)
 data/qd_cache/
+.submission-runs/
