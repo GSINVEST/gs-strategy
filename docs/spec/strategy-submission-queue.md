@@ -7,7 +7,7 @@
 
 ## 0. 結論先講
 
-1. gs-strategy **沒有**提交佇列，也沒有任何一條路徑能把「一次 selection 回測」寫進 ledger：`log/trials.jsonl` 719 行、360 個相異 `trial_id`，**全部** `delta_n = 0`（L0 機械分診，`no_statistical_claim: true`）；`experiments/preregistration/` 只有 `README.md` 與 `TEMPLATE.yaml`，**一份真的登記檔都沒有**。所以六個不變量裡沒有一個在現況下成立，只是它們還沒有被違反的機會。
+1. gs-strategy **沒有**提交佇列，也沒有「提交→核准→才計 trial」的路徑；唯一會寫 `delta_n=1` 的是已合併的 `graph/ledger.py` 的 `SelectionLedger`（跑完才記帳，見 §1.4 勘誤）。目前 ledger 資料：`log/trials.jsonl` 719 行、360 個相異 `trial_id`，**全部** `delta_n = 0`（L0 機械分診，`no_statistical_claim: true`）；`experiments/preregistration/` 只有 `README.md` 與 `TEMPLATE.yaml`，**一份真的登記檔都沒有**。所以六個不變量裡沒有一個在現況下成立，只是它們還沒有被違反的機會。
 2. 最小設計：新增一個 `strategies/_common/submission/` 套件，狀態只有 `pending → approved → retired` 三種；**核准 = 在 flock 下對 ledger 追加一行 `delta_n=1` 的 trial（含簽核欄位）**，這一次 append 就是同一個動作的提交點；提交本身只寫事件檔、不呼叫回測。CLI 即可，不做 StratyUI 頁。
 3. 先修三個會讓第一筆 selection trial 就出事的既有缺口（§1.3），這些不修，佇列一上線就會把 DSR 分母算錯。
 4. 切 3 個 PR（gs-strategy 2 個、對真程式的回放 1 個，後者需 genesis-deck 配合小改）。粗估 3 個工作天，**這是我的猜測，沒有實測依據**。
@@ -20,7 +20,7 @@
 |---|---|---|
 | 格式 | JSONL，`schema: research-trial/v1`，每行一個 trial 節點；`stat_decision` 區塊帶 `purpose`、`delta_n`、`no_statistical_claim`、`basis`，或帶 `decision_path`/`rule_id`/`threshold`（selection 用） | `log/trials.jsonl`、`strategies/_common/validation/decision.py` |
 | 規模 | 719 行／360 個相異 `trial_id`／`delta_n` 總和 0／`purpose` 欄位在頂層全為空（`purpose` 只在 `stat_decision` 內） | 本次統計 |
-| 誰寫 | **唯一**寫入者是 `scripts/triage_generated.py --apply`（`open("a")` 直接追加）。`runner.py` 不寫 ledger；`quant_crawler/webui/stat_tree.py` 只讀 | `triage_generated.py` 尾段、`stat_tree.py` |
+| 誰寫 | 兩個寫入者：(1) `scripts/triage_generated.py --apply`（`delta_n=0` 的分診記錄）；(2) `strategies/_common/graph/ledger.py` 的 `SelectionLedger.record_success()`（**寫 `delta_n=1` 的 selection trial**，有 flock／msvcrt 跨平台鎖、依 `backtest_key` 去重、先寫 config 快照再 append）。`runner.py` 不寫 ledger；`stat_tree.py` 只讀。**勘誤：本文初稿漏看 (2)**，是動手做 PR1 時才發現 | `triage_generated.py` 尾段、`graph/ledger.py` |
 | append-only | 靠 `scripts/check_append_only.py` 擋「既有行被改、被截短、被刪、被改名」，掛在 `.git/hooks/pre-commit`（`scripts/install_hooks.sh` 安裝）。**只在本機 commit 時生效**；`.github/workflows/ci.yml` 沒有呼叫它（對 ci.yml grep `append` 與 `rev-range` 無命中）；`--no-verify` 可繞過（設計上刻意留著） | `check_append_only.py` |
 | 同 id 多行 | 允許。讀端取「同 `trial_id` 最後一筆」：`stat_tree.ledger_summary()` 這樣做（`n_selection` 是對**最後一筆**的 `delta_n` 加總） | `stat_tree.py:155-170` |
 | n_trials 怎麼算 | 有三套互不相連的算法：(a) `stat_tree.ledger_summary()`：去重後加總 `delta_n`；(b) `triage_generated.count_existing_selection_trials()` 與 `decision.audit_ledger()`：**不去重**，逐行加總 `delta_n`；(c) `runner.py` → `validation.report.resolve_n_trials()`：config `validation.n_trials` > 環境變數 `GS_VALIDATION_N_TRIALS` > 預設 `1`，**完全不讀 ledger** | 三處原始碼 |
@@ -43,6 +43,12 @@
 1. **去重一致化**：`decision.audit_ledger()` 與 `triage_generated.count_existing_selection_trials()` 改成與 `stat_tree`/harness 相同的「同 id 取最後一筆」。否則下面「完成行」會讓 N 變 2 倍。
 2. **同 id `delta_n` 不得下降**：寫進 `audit_ledger`（回報為 problem），並在 CI 跑 `check_append_only.py --rev-range origin/main..HEAD`。
 3. **p 值缺口的處置**：selection trial 在回測完成前沒有 p 值，`budget_from_ledger` 會直接丟例外。設計上用「完成行」補（§2.4）；補之前 `online_fdr_summary()` 顯示 unavailable 並說明缺哪一筆，這是現有的誠實行為，不改。
+
+### 1.4 勘誤：既有 `SelectionLedger` 與本設計的關係
+
+- 它是「**回測成功後記帳**」（事後計數，不經人核准），與佇列的「**核准即記帳**」是兩條不同的入口；兩者要共用同一份 ledger 與同一套去重／鎖。佇列不應自己重寫一把鎖，PR2 應重用其 `_exclusive` 與追加邏輯（含「最後一個位元組不是 LF 時補換行」的處理），並以 `count_existing_selection_trials`（PR1 已改為去重）作為 N 的唯一口徑。
+- 它寫的 selection 記錄的 `stat_decision` **沒有 `p_value`／`p_value_source`**；一旦真的寫入，`budget_from_ledger` 會丟 `PValueProvenanceError`。這與 §1.3-3 是同一個缺口，不是佇列引入的。
+- 它的 `trial_id` 是 `t-graph-<backtest_key>`；佇列用 `t-sub-<sid>`，命名空間不衝突。同一個策略若既經佇列核准、又經 graph 跑出成功回測，會各記一次 trial——是否應合併為一次，**未決定**（§4）。
 
 ## 2. 最小設計
 
@@ -141,7 +147,7 @@ approve(sid, who):
 | 單元 | 六個不變量各一組性質測試（直接對 `SubmissionQueue` 跑隨機動作序列，每步檢查）；`submit` 不 import runner（`sys.modules` 斷言）；冪等（重送、重複核准）；非核准者被拒且不寫檔；prereg 缺／未 commit／`validate` 不過被拒；`resolve` 解不出處方被拒 |
 | 稽核 | `audit_ledger` 去重、同 id `delta_n` 下降被抓、`count_existing_selection_trials` 與 `stat_tree` 一致（PR1） |
 | 負控制 | 比照 genesis-deck 的 7 個壞實作（subclass 覆寫 seam，§3），每個必須被對應不變量抓到，否則測試本身空洞 |
-| 並發 | 兩個行程同時 `approve` 同一 id，只能一個 `APPROVED`、ledger 只多一行（用 `multiprocessing`，flock 的正確性靠這條驗，不靠推理） |
+| 並發 | 兩個行程同時 `approve` 同一 id，只能一個 `APPROVED`、ledger 只多一行（用 `multiprocessing`，鎖的正確性靠這條驗，不靠推理；`tests/test_live_graph_ledger.py` 已有同型測試可仿） |
 | crash | 在 ledger append 前後各注入例外：前 → 仍 PENDING；後 → APPROVED、`trials=1/runs=0`，再 `approve` 回 `NOOP` 且不重跑 |
 | CLI | `submit → list → approve → show` 走一遍；`--as` 不在名單被拒 |
 | 不測 | 真的 zipline 回測（需 `TEJAPI_KEY`，CI 已知跳過，見 `ci.yml` 開頭說明）；`backtest` 一律注入計數樁 |
@@ -195,7 +201,8 @@ genesis-deck `tests/formal/test_strategy_queue_conformance.py` 的 `replay(trace
 **實作風險**
 
 - **ledger 是 git 追蹤檔，多處並發會 merge 衝突。** flock 只擋同一台機器。gs-strategy 正在搬到 gsinvest（Forgejo；見 PR 44、48）。假設：**核准只在單一主機執行**。這個假設沒有機制強制。
-- **flock 僅在 WSL/Linux 檔案系統可靠**；本設計不支援從 Windows 端經 UNC 路徑執行 `approve`。
+- **鎖**：既有 `graph/ledger.py` 的 `_exclusive` 在 Windows 用 `msvcrt`、Linux 用 `flock`，重用它即可；但經 UNC 路徑對 WSL 檔案上鎖的行為**未驗證**，建議仍只在 WSL 內執行 `approve`。
+- **雙入口重複計數**：見 §1.4 第三點，未決定。
 - **CI 沒有跑 append-only 檢查**（§1.1），PR1 補上之前，ledger 的保護只剩本機 hook。
 - **`--no-verify` 與直接編輯檔案**：任何有 shell 的人都能繞過；設計目標是「繞過會留痕」，不是「不可能繞過」，與現有 hook 的立場一致。
 - **harness 的 `collect()`** 是否也是「同 id 取最後一筆」，我只讀到註解（`stat_tree.py:155`、`check_append_only.py` 文件字串）這樣宣稱，沒有讀 harness 程式本身。
