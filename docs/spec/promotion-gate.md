@@ -75,8 +75,7 @@ GS_PROMOTERS=kevin python scripts/promotion_gate.py promote --strategy-dir strat
 
 ## 7. 餵入 SPA p 值的注意事項
 
-`--spa-p` 的數值由外部提供。`reality_check.hansens_spa()` 回傳 `p_lower`／`p_consistent`／`p_upper` 三個值，**不得挑最小的 `p_lower`**：合成資料實測（500 筆、1 個弱正報酬候選＋40 個明顯虧損候選）`p_lower=0.047`（會通過 0.05）但 `p_consistent=0.135`、`p_upper=0.784`。Hansen 建議用 `p_consistent`；`p_upper` 最保守。D1 未規定用哪一個，待正式接線時決定，但門檻只准收緊，所以不得用 `p_lower`。
-||||||| parent of 7480654 (feat: 晉升閘門補強——自行申報檢查封頂 conditional、輸入雜湊、重篩追蹤與撤銷)
+`--spa-p` 的數值由外部提供。`reality_check.hansens_spa()` 回傳 `p_lower`／`p_consistent`／`p_upper` 三個值，**不得挑最小的 `p_lower`**：合成資料實測（500 筆、1 個弱正報酬候選＋40 個明顯虧損候選）`p_lower=0.047`（會通過 0.05）但 `p_consistent=0.135`、`p_upper=0.784`。Hansen 建議用 `p_consistent`；`p_upper` 最保守。**決定：一律用 `p_consistent`**（Hansen 2005 的建議值）。`p_upper` 在候選池混有很多爛策略時會被推到接近 1（上例 0.784），使閘門幾乎永遠擋下，失去鑑別力；`p_lower` 太寬鬆。門檻只准收緊，所以不得改用 `p_lower`。
 
 ## 8. 信任邊界與已知限制
 
@@ -98,4 +97,9 @@ GS_PROMOTERS=kevin python scripts/promotion_gate.py promote --strategy-dir strat
 
 ### 其他已知限制
 - `strategies/_common/promotion/gate.py` 反向 import `scripts.triage_generated`（`strategies/_common/graph/ledger.py` 也是同樣做法）。尚未重構成單向依賴。
-- 成本模型：`tsmom_tx_mtx/config.yaml` 的 `per_contract_cost` 是單邊還是來回**待查**（需看 zipline-tej 的 `PerContract` 實作，本 repo 與本機環境均無法確認）。閘門的「成本乘二」只忠實計算收到的序列。
+- 成本模型：`per_contract_cost` 是**單邊、每口、每筆成交**——zipline-tej `PerContract.calculate` 以 `abs(transaction.amount * cost_per_unit)` 計費（另有每張訂單一次性的 `exchange_fee`，本 repo 設為 0）。所以 MTX=100 代表每口每次成交 100 TWD，來回 200。`spread_points` 另計滑價。**決定：「成本乘二」＝把 `per_contract_cost` 與 `spread_points` 同時乘二後重跑回測**，並以乘二後的報酬序列餵入 `--stress`。閘門本身只忠實計算收到的序列，不驗證它是否真的乘二。
+
+## 9. 營運設定
+
+- **`GS_PROMOTERS`**：只列實際有權按晉升的人，建議只放 `gsinvest017-ai`（與 main 合併權限一致，另加 admin 一人即可）。未設定一律拒絕；agent 的環境不應設定此變數。
+- **registry 的 PR 審查**：`log/promotions.jsonl` 的任何變更都必須走 PR，由 `gsinvest017-ai` 審查後才能進 main。
