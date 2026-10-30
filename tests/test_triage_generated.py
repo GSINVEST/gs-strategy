@@ -251,3 +251,16 @@ def test_dry_run_writes_nothing(tmp_path, monkeypatch, capsys):
     assert tg.main(["--baseline-n", "33"]) == 0
     assert not ledger.exists()
     assert "dry-run" in capsys.readouterr().out
+
+
+def test_count_existing_selection_trials_uses_latest_line_per_trial_id(tmp_path):
+    from scripts.triage_generated import count_existing_selection_trials
+    path = tmp_path / "trials.jsonl"
+    lines = [
+        {"trial_id": "t-a", "stat_decision": {"delta_n": 1}},
+        {"trial_id": "t-a", "stat_decision": {"delta_n": 1, "p_value": 0.01}},
+        {"trial_id": "t-b", "stat_decision": {"delta_n": 1}},
+        {"trial_id": "t-c", "stat_decision": {"delta_n": 0}},
+    ]
+    path.write_text("\n".join(json.dumps(x) for x in lines) + "\n", encoding="utf-8")
+    assert count_existing_selection_trials(path) == 2

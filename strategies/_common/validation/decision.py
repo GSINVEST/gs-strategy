@@ -543,16 +543,50 @@ def audit_record(record: Mapping[str, Any]) -> list[str]:
     return problems
 
 
+def latest_by_trial_id(records: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    """同 ``trial_id`` 只留最後一筆（ledger 允許追加同 id 的更新行）。
+
+    讀端統一用這個口徑，stat_tree 與 harness 也是取最後一筆。逐行加總 ``delta_n``
+    的讀端，會在追加一行「完成行」時讓 N 加倍。沒有 ``trial_id`` 的記錄無法去重，
+    逐筆保留；順序以各 id 第一次出現的位置為準。
+    """
+    order: list[Any] = []
+    latest: dict[str, Mapping[str, Any]] = {}
+    for i, rec in enumerate(records):
+        tid = rec.get("trial_id")
+        if not tid:
+            order.append(i)
+            continue
+        if tid not in latest:
+            order.append(tid)
+        latest[tid] = rec
+    return [records[k] if isinstance(k, int) else latest[k] for k in order]
+
+
 def audit_ledger(records: Sequence[Mapping[str, Any]]) -> dict:
     """整份 ledger 的稽核報告，另附 N 記帳的重算。
 
     N 是 DSR 的分母，也是本專案最容易被悄悄低估的數字。這裡不信任任何人記在
-    報告裡的 N，而是從 ledger 逐筆重算 ``purpose == selection`` 的筆數。
+    報告裡的 N，而是從 ledger 重算 ``purpose == selection`` 的筆數——同 ``trial_id``
+    只算最後一筆，並檢查同 id 的 ``delta_n`` 沒有往下掉：追加一行較小的
+    ``delta_n`` 不會被 append-only hook 擋下，卻會讓 N 變小。
     """
     problems: list[str] = []
-    n_selection = 0
+    seen_delta: dict[str, int] = {}
     for rec in records:
         problems.extend(audit_record(rec))
+        tid = rec.get("trial_id")
+        block = rec.get("stat_decision")
+        if tid and isinstance(block, Mapping):
+            d = int(block.get("delta_n", 0))
+            if tid in seen_delta and d < seen_delta[tid]:
+                problems.append(
+                    f"{tid}：delta_n 從 {seen_delta[tid]} 降為 {d}——同一個 trial 的"
+                    "母體計數只增不減，下降會讓 N 變小、DSR 變好看。"
+                )
+            seen_delta[tid] = max(d, seen_delta.get(tid, 0))
+    n_selection = 0
+    for rec in latest_by_trial_id(records):
         block = rec.get("stat_decision")
         if isinstance(block, Mapping):
             n_selection += int(block.get("delta_n", 0))

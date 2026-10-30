@@ -319,7 +319,7 @@ def test_audit_reports_missing_block_instead_of_crashing():
 
 def test_audit_ledger_recomputes_n_rather_than_trusting_it():
     """N 是 DSR 的分母，不信任任何人寫在報告裡的數字，逐筆重算。"""
-    ledger = [_record(), _record(), {"trial_id": "s", "stat_decision": {
+    ledger = [{**_record(), "trial_id": "t-1"}, {**_record(), "trial_id": "t-2"}, {"trial_id": "s", "stat_decision": {
         **_record()["stat_decision"],
         "decision_path": {**_facts(purpose="screening").as_path()},
         "rule_id": resolve(_facts(purpose="screening")).rule_id,
@@ -361,3 +361,21 @@ def test_forbidden_bootstrap_methods_are_carried_into_the_prescription():
     joined = " ".join(p.forbids)
     assert "iid bootstrap" in joined
     assert "permutation" in joined
+
+
+def test_audit_ledger_counts_latest_line_per_trial_id():
+    """同 trial_id 追加「完成行」是合法的；N 不得因此加倍（與 stat_tree 一致）。"""
+    first = {**_record(), "trial_id": "t-a"}
+    done = {**_record(), "trial_id": "t-a", "state": "complete"}
+    out = audit_ledger([first, done, {**_record(), "trial_id": "t-b"}])
+    assert out["n_selection_recomputed"] == 2
+    assert out["auditable"], out["problems"]
+
+
+def test_audit_ledger_flags_delta_n_decreasing_for_same_trial_id():
+    """追加一行同 id 但 delta_n 較小，讀端取最後一筆會讓 N 下降——TrialMonotone。"""
+    first = {**_record(), "trial_id": "t-a"}
+    shrunk = {**first, "stat_decision": {**first["stat_decision"], "delta_n": 0}}
+    out = audit_ledger([first, shrunk])
+    assert not out["auditable"]
+    assert any("t-a" in p and "delta_n" in p for p in out["problems"])

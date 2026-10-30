@@ -253,3 +253,55 @@ def test_id_must_match_filename(tmp_path):
 def test_shipped_template_is_not_mistaken_for_a_real_registration(tmp_path):
     """TEMPLATE.yaml 欄位是空的，驗證器不該把它當成一份未通過的登記檔。"""
     assert cpr.main([]) == 0
+
+
+# ---------------------------------------------------------------------------
+# 四、CI 的 --rev-range 模式與提交佇列的保護路徑
+# ---------------------------------------------------------------------------
+
+def _commit_ledger(repo: Path, content: str) -> None:
+    (repo / "log" / "trials.jsonl").write_text(content, encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "ledger")
+
+
+def test_rev_range_catches_a_rewritten_ledger_line(repo):
+    """CI 檢查的是已 commit 的範圍；index 與 HEAD 相同，不能拿 index 當「改後」。"""
+    _commit_ledger(repo, '{"trial_id":"t-1"}\n{"trial_id":"t-2-EDITED"}\n')
+    v = cao.check("HEAD~1..HEAD", base="HEAD~1")
+    assert len(v) == 1 and "第 2 行被改寫" in v[0].kind
+
+
+def test_rev_range_allows_append_and_catches_truncation(repo):
+    _commit_ledger(repo, '{"trial_id":"t-1"}\n{"trial_id":"t-2"}\n{"trial_id":"t-3"}\n')
+    assert cao.check("HEAD~1..HEAD", base="HEAD~1") == []
+    _commit_ledger(repo, '{"trial_id":"t-1"}\n')
+    v = cao.check("HEAD~1..HEAD", base="HEAD~1")
+    assert len(v) == 1 and "被截短" in v[0].kind
+
+
+def test_rev_range_cli_derives_base_from_the_range(repo):
+    _commit_ledger(repo, '{"trial_id":"t-1"}\n{"trial_id":"t-2-EDITED"}\n')
+    assert cao.main(["--rev-range", "HEAD~1..HEAD"]) == 1
+
+
+def test_submission_event_log_is_append_only(repo):
+    (repo / "log" / "submissions.jsonl").write_text('{"e":1}\n{"e":2}\n', encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "events")
+    _stage(repo, "log/submissions.jsonl", '{"e":1}\n{"e":"EDITED"}\n')
+    v = cao.check()
+    assert len(v) == 1 and "第 2 行被改寫" in v[0].kind
+
+
+def test_submitted_bundles_are_write_once(repo):
+    (repo / "strategies" / "_submitted" / "s-abc").mkdir(parents=True)
+    f = "strategies/_submitted/s-abc/strategy.py"
+    _stage(repo, f, "x = 1\n")
+    assert cao.check() == []
+    _git(repo, "commit", "-q", "-m", "bundle")
+    _stage(repo, f, "x = 2\n")
+    v = cao.check()
+    assert len(v) == 1 and "不可修改" in v[0].kind
+    assert cao.is_frozen_submission(f)
+    assert not cao.is_frozen_submission("strategies/_generated/a/strategy.py")

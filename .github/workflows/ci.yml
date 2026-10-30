@@ -34,6 +34,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # append-only 檢查要比對 PR 分支與 base 的 ledger 內容
 
       - uses: actions/setup-python@v7
         with:
@@ -46,6 +48,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-test.txt -r requirements-bt.txt
+
+      - name: Ledger / pre-registration append-only
+        # 本機 pre-commit hook 可被 --no-verify 繞過；這一步讓繞過在 PR 上現形。
+        if: github.event_name == 'pull_request'
+        run: |
+          python scripts/check_append_only.py \
+            --rev-range "origin/${{ github.base_ref }}...HEAD"
 
       - name: Run pytest
         # env:
