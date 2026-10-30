@@ -1,0 +1,16 @@
+{
+ "variant": "vvs_raw",
+ "model": "VolatilityVolumeShare(volume_limit=0.05, eta=<varies>)",
+ "strategy": "vgrsi_tx",
+ "start": "2024-01-01",
+ "end": "2024-06-30",
+ "error": "TypeError: MarketImpactBase.process_order() takes 3 positional arguments but 4 were given",
+ "traceback_tail": [
+  "  File \"/home/kevin/exp-vvs/.venv/lib/python3.11/site-packages/zipline/finance/blotter/simulation_blotter.py\", line 412, in get_transactions",
+  "    for order, txn in slippage.simulate(",
+  "  File \"/home/kevin/exp-vvs/.venv/lib/python3.11/site-packages/zipline/finance/slippage.py\", line 214, in simulate",
+  "    execution_price, execution_volume = self.process_order(",
+  "                                        ^^^^^^^^^^^^^^^^^^^",
+  "TypeError: MarketImpactBase.process_order() takes 3 positional arguments but 4 were given"
+ ]
+}

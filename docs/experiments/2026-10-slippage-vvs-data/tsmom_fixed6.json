@@ -1,0 +1,21 @@
+{
+ "variant": "fixed6",
+ "model": "LoggedFixed(spread=6.0)",
+ "strategy": "tsmom_tx_mtx",
+ "start": "2018-01-01",
+ "end": "2026-04-30",
+ "final_value": 20544000.0,
+ "net_return_pct": 105.43999999999998,
+ "sharpe_ann": 0.6923534720406603,
+ "n_days": 2023,
+ "n_fills": 247,
+ "contracts_traded": 1086.0,
+ "slip_total_pts": 3258.0,
+ "slip_total_ntd": 258750.0,
+ "slip_mean_pts_per_contract": 3.0,
+ "slip_max_pts": 3.0,
+ "roots": [
+  "MTX",
+  "TX"
+ ]
+}
