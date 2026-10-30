@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
@@ -39,14 +40,39 @@ def _append(registry: Path, record: dict[str, Any]) -> None:
 
 
 def _read(registry: Path) -> list[dict[str, Any]]:
+    """讀 registry。壞行（JSON 損毀、非物件）略過並發出警告，不讓整份記錄讀不出來。"""
     if not registry.is_file():
         return []
     out = []
-    for line in registry.read_text(encoding="utf-8").splitlines():
+    for lineno, line in enumerate(registry.read_text(encoding="utf-8").splitlines(), 1):
         line = line.strip()
-        if line:
-            out.append(json.loads(line))
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            rec = None
+        if not isinstance(rec, dict) or "event" not in rec:
+            warnings.warn(f"{registry}:{lineno} 不是有效的 registry 事件，已略過", stacklevel=2)
+            continue
+        out.append(rec)
     return out
+
+
+def is_promoted(strategy_id: str, sha: str, registry: Path = REGISTRY) -> bool:
+    """此版本（sha）目前是否處於已晉升狀態。
+
+    同 sha 後來又被 screened 且判定 blocked，先前的 promoted 即失效。
+    """
+    state = False
+    for e in _read(Path(registry)):
+        if e.get("strategy_id") != strategy_id or e.get("strategy_sha256") != sha:
+            continue
+        if e["event"] == "promoted":
+            state = True
+        elif e["event"] == "screened" and e.get("report", {}).get("verdict") == "blocked":
+            state = False
+    return state
 
 
 def latest(strategy_id: str, registry: Path = REGISTRY) -> dict[str, Any] | None:
@@ -69,13 +95,20 @@ def record_screening(
     registry: Path = REGISTRY,
     now: datetime | None = None,
 ) -> dict[str, Any]:
+    sha = strategy_sha256(strategy_dir)
+    prior = [e for e in _read(Path(registry))
+             if e["event"] == "screened" and e.get("strategy_id") == report.strategy_id
+             and e.get("strategy_sha256") == sha]
     rec = {
         "event": "screened",
         "ts": _now(now),
+        # 同一版本被反覆篩選時留下痕跡：換輸入重跑直到過關不計入 trial，至少要看得見。
+        "screening_count": len(prior) + 1,
+        "previous_verdict": prior[-1]["report"]["verdict"] if prior else None,
         "strategy_id": report.strategy_id,
         "lineage_id": lineage_id,
         "branch": branch,
-        "strategy_sha256": strategy_sha256(strategy_dir),
+        "strategy_sha256": sha,
         "framework_version": framework_version,
         "data_snapshot": data_snapshot,
         "cost_model_version": cost_model_version,
@@ -114,7 +147,7 @@ def promote(
     sha = strategy_sha256(strategy_dir)
     if sha != screened["strategy_sha256"]:
         raise PromotionError(f"{strategy_id}: 篩選後策略內容已變更，須重新篩選")
-    if any(e["event"] == "promoted" and e["strategy_sha256"] == sha for e in events):
+    if is_promoted(strategy_id, sha, registry):
         raise PromotionError(f"{strategy_id}: 此版本已晉升")
 
     verdict = screened["report"]["verdict"]
@@ -122,6 +155,10 @@ def promote(
         raise PromotionError(f"{strategy_id}: 閘門判定 blocked，不得晉升（沒有人工覆寫）")
     if verdict == "conditional" and not note.strip():
         raise PromotionError(f"{strategy_id}: 閘門判定 conditional，必須附人工簽註 note")
+    if screened.get("screening_count", 1) > 1 and not note.strip():
+        raise PromotionError(
+            f"{strategy_id}: 此版本已被篩選 {screened['screening_count']} 次"
+            f"（前次判定 {screened.get('previous_verdict')}），必須附簽註說明為何重篩")
 
     rec = {
         "event": "promoted",

@@ -58,6 +58,7 @@ def _build_parser() -> argparse.ArgumentParser:
     ev.add_argument("--framework-version", required=True)
     ev.add_argument("--data-snapshot", required=True)
     ev.add_argument("--cost-model-version", required=True)
+    ev.add_argument("--tags", default="", help="逗號分隔")
 
     pr = sub.add_parser("promote")
     pr.add_argument("--strategy-dir", type=Path, required=True)
@@ -83,12 +84,18 @@ def main(argv: list[str] | None = None) -> int:
                 external=_external(args.external),
             )
             report = evaluate(inputs)
-            record_screening(
+            rec = record_screening(
                 report, strategy_dir=args.strategy_dir, lineage_id=args.lineage_id,
                 branch=args.branch, framework_version=args.framework_version,
                 data_snapshot=args.data_snapshot, cost_model_version=args.cost_model_version,
+                tags=[t.strip() for t in args.tags.split(",") if t.strip()],
                 registry=args.registry,
             )
+            if rec["screening_count"] > 1:
+                flip = (f"；判定 {rec['previous_verdict']} → {report.verdict}"
+                        if rec["previous_verdict"] != report.verdict else "")
+                print(f"警告：此版本第 {rec['screening_count']} 次篩選{flip}。"
+                      "重跑換輸入不計入 trial，晉升時須附簽註。", file=sys.stderr)
             print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
             return 0
         rec = promote(args.strategy_id, strategy_dir=args.strategy_dir, by=args.by,
