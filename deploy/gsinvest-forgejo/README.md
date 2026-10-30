@@ -44,8 +44,11 @@ gsinvest 環境（2026-10-30）：docker 29.4 + compose v5.1、磁碟剩 6.5T、
    git push ssh://git@gsinvest:2223/gs/gs-strategy.git 'refs/heads/*:refs/heads/*' --tags
    ```
    第一次推送 `main` 時 `old = 0000…`，hook 只跑 append-only、不驗登記（見待做）。匯入後可刪除該暫存 clone。
-10. **備份通道**（spec §7）：jsonhuang 端建 `/backup/gs-strategy/`；gsinvest 端 cron／user-systemd timer 每日
-    `docker compose exec forgejo git -C <repo> bundle create - --all | ssh jsonhuang 'cat > …'`。備份內容不得含 TEJ 金鑰。
+10. **備份通道**（2026-10-30 已建，檔案在 `backup/`）：gsinvest 的 user-systemd timer 每日 03:30 執行 `gs-forgejo-backup.sh`，
+    把 Forgejo 的 `gs/gs-strategy` 打成 `git bundle`，經專用 write-only 金鑰（`~/.ssh/id_gsbackup`）送到 jsonhuang `/backup/gs-strategy/`。
+    jsonhuang 端 `authorized_keys` 該金鑰加 `restrict,command="/home/jsonhuang/bin/gs-backup-receive.sh"`：只能把 stdin 存成帶時間戳的新檔
+    （先 `git bundle verify`，不覆蓋既有檔）。備份內容不含 TEJ 金鑰。安裝：把 `backup/` 的 `.service`/`.timer` 放到 `~/.config/systemd/user/`，
+    `systemctl --user enable --now gs-forgejo-backup.timer`。
 11. **還原演練**：在 gsinvest 起空 volume，從 jsonhuang 的 bundle `git clone`，確認 `main` HEAD 一致。
 12. **DNS／Cloudflare Access hostname／內網轉埠**：規格 §11 指定由你處理，我不動。
 
@@ -55,7 +58,8 @@ gsinvest 環境（2026-10-30）：docker 29.4 + compose v5.1、磁碟剩 6.5T、
 - hook 以符號連結掛在 `pre-receive.d/gs-prereg`；容器內直接餵假資料驗過「刪 main 被拒、非 main ref 放行」。
 - `main` 已設白名單分支保護（目前白名單只有 kevin）。
 - **尚未實測**：真實推送時 Forgejo 是否呼叫 hook 並帶入 `GITEA_PUSHER_EMAIL`（建議用拋棄式 repo 測，不要拿 `gs-strategy` 的 `main`）。
-- **尚未做**：joker／jason 帳號、備份通道（步驟 10）、還原演練（步驟 11）、DNS／CF Access（步驟 12）。
+- 備份通道已建並實跑一次成功；還原演練已做（bundle 還原後 `origin/main` 與 Forgejo 一致、fsck 通過）。
+- **尚未做**：joker／jason 帳號、備份保留／輪替策略、DNS／CF Access（步驟 12）。
 
 ## 二、驗證
 
