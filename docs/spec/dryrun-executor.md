@@ -112,6 +112,15 @@ DRYRUN_DOCKER_TESTS=1 pytest tests/test_dryrun_container.py          # 同上，
 
 **接通知通道**：把 `scripts/dryrun_notify_slack.example.sh` 複製到 `~/.config/gs-dryrun/notify`（權限 700），webhook URL 另存 `~/.config/gs-dryrun/slack_webhook`（權限 600）。`dryrun_run_daily.sh` 偵測到 `notify` 可執行就自動設成 `DRYRUN_ALERT_CMD`；也可自備任何從 stdin 讀訊息的指令。範例腳本只驗過語法，**沒有實際對 Slack 送過**。
 
+## 快照與推送（給桌面版 dry run 面板）
+
+設計見 genesis-deck 的 `docs/superpowers/specs/2026-10-30-dryrun-panel-design.md`。`dryrun_run_daily.sh` 在健康檢查後於**主機**執行：
+
+- `snapshot`（`strategies/_common/dryrun/snapshot.py`）：唯讀開帳本，輸出 `strategy-live-snapshot/1` JSON：每支策略的狀態、最後交易日、連續缺漏、三情境權益序列、累計成本分項，加上告警清單。**不含**成交明細、委託、策略程式碼、帳本路徑。契約範例在 `tests/fixtures/strategy-live-snapshot.example.json`，測試保證它就是產生器現在的輸出（genesis-deck 的 gateway 測試會複製同一份）。
+- **機密分類（fail closed）**：策略 `manifest.yaml` 的 `tags` 含 `forge` 或 `mint`（`gs-forge`、`gs-mint` 的策略研究）→ `classification` 為 `["forge"]`／`["mint"]`；沒有則 `["open"]`；manifest 讀不到、沒有 `tags` 欄或 strategy_id 形狀不合 → `["unknown"]`，下游一律當機密，並在告警加一條「請補上 tags」。**這兩個 repo 產出的策略必須帶對應 tag**，否則會被當成一般策略。
+- `push`（`push.py`）：以 `PUT` 加 `Authorization: Bearer` 推到 gateway。網址與金鑰存在 `~/.config/gs-dryrun/push_url`、`push_key`（權限 600；金鑰是 gateway 上帶 `strategy-live:push` scope 的專用 key，用 `keyctl.sh` 發，**不要貼到對話或 repo**）。任一檔不存在 → 只印警告、結束碼 0；被拒或網路錯誤 → 結束碼 2。輸出不含金鑰、網址與回應內容。
+- 已實跑（WSL 系統 python3.12）：產生快照、推送到本機假伺服器（Bearer 與內容正確）、未設定時略過。**未驗證**：真實 gateway 端點（屬 genesis-deck 的 P2，尚未存在）、`push_key` 的實際發放、cron 下的完整流程。
+
 ## 排程
 
 ```bash
