@@ -97,9 +97,11 @@ GS_PROMOTERS=kevin python scripts/promotion_gate.py promote --strategy-dir strat
 
 ### 其他已知限制
 - `strategies/_common/promotion/gate.py` 反向 import `scripts.triage_generated`（`strategies/_common/graph/ledger.py` 也是同樣做法）。尚未重構成單向依賴。
-- 成本模型：`per_contract_cost` 是**單邊、每口、每筆成交**——zipline-tej `PerContract.calculate` 以 `abs(transaction.amount * cost_per_unit)` 計費（另有每張訂單一次性的 `exchange_fee`，本 repo 設為 0）。所以 MTX=100 代表每口每次成交 100 TWD，來回 200。`spread_points` 另計滑價。**決定：「成本乘二」＝把 `per_contract_cost` 與 `spread_points` 同時乘二後重跑回測**，並以乘二後的報酬序列餵入 `--stress`。閘門本身只忠實計算收到的序列，不驗證它是否真的乘二。
+- 成本模型：`per_contract_cost` 是**單邊、每口、每筆成交**——zipline-tej `PerContract.calculate` 以 `abs(transaction.amount * cost_per_unit)` 計費（另有每張訂單一次性的 `exchange_fee`，本 repo 設為 0）。所以 MTX=100 代表每口每次成交 100 TWD，來回 200。`spread_points` 另計滑價。**決定：「成本乘二」＝把 `per_contract_cost` 與 `spread_points` 同時乘二後重跑回測**，並以乘二後的報酬序列餵入 `--stress`。閘門本身只忠實計算收到的序列，不驗證它是否真的乘二；用 `scripts/promotion_gate.py stress --strategy-dir DIR --out stress.parquet [--factor 2]` 產生（`strategies/_common/promotion/cost_stress.py`）：config 沒寫的成本會先展開成預設值再乘，`factor < 1` 一律拒絕。**正式成本表沿用 `config.yaml` 現值**（管理者 2026-10-30 決定；查不到實際費率前不另訂）。
 
 ## 9. 營運設定
 
-- **`GS_PROMOTERS`**：只列實際有權按晉升的人，建議只放 `gsinvest017-ai`（與 main 合併權限一致，另加 admin 一人即可）。未設定一律拒絕；agent 的環境不應設定此變數。
+- **`GS_PROMOTERS`**：**只放 `gsinvest017-ai`**（管理者 2026-10-30 確認）。未設定一律拒絕；agent 的環境不應設定此變數。
 - **registry 的 PR 審查**：`log/promotions.jsonl` 的任何變更都必須走 PR，由 `gsinvest017-ai` 審查後才能進 main。
+- **CODEOWNERS**：`.github/CODEOWNERS` 指定 `log/promotions.jsonl` 與 `docs/spec/promotion-gate.md` 的擁有者為 `@gsinvest017-ai`。注意 GitHub Free 的私有 repo 無法強制「需要 code owner 審查」，這個檔案目前只是宣告與自動指派審查者。
+- **鏡像推送的限制（已接受）**：鏡像以 kevin 的身分推 main；若日後有他人為 author 的預登記檔進 main，gsinvest Forgejo 的 pre-receive 會拒絕鏡像推送——先這樣，被擋住再處理（管理者 2026-10-30 決定）。

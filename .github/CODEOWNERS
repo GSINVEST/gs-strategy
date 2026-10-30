@@ -1,0 +1,4 @@
+# 晉升 registry 與其規則文件：變更須由管理者審查（見 docs/spec/promotion-gate.md §8、§9）。
+/log/promotions.jsonl           @gsinvest017-ai
+/docs/spec/promotion-gate.md    @gsinvest017-ai
+/strategies/_common/promotion/  @gsinvest017-ai
