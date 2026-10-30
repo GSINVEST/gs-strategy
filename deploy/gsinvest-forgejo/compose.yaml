@@ -1,0 +1,26 @@
+# gsinvest 上的 Forgejo（權威 bare repo + pre-receive）。對應 docs/spec/host-migration-gsinvest.md §5。
+# gsinvest 無 sudo：只用 docker + named volume。2222 已被占用，所以 SSH 用 2223、HTTP 只綁 127.0.0.1:3301。
+name: gs-forgejo
+services:
+  forgejo:
+    build: .
+    image: gs-forgejo:9-hooks
+    restart: unless-stopped
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      FORGEJO__server__SSH_DOMAIN: gsinvest
+      FORGEJO__server__SSH_PORT: "2223"
+      FORGEJO__server__ROOT_URL: http://127.0.0.1:3301/
+      FORGEJO__service__DISABLE_REGISTRATION: "true"   # 帳號只能由管理員建
+      FORGEJO__security__INSTALL_LOCK: "true"
+    ports:
+      - "2223:22"
+      - "127.0.0.1:3301:3000"
+    volumes:
+      - forgejo-data:/data
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 2g }
+volumes:
+  forgejo-data:
