@@ -8,4 +8,4 @@ pypdf>=6.16.1      # PDF text extraction for rag-ingest
 # >=2.0.0 without migrating the code, so any fresh install got
 # ModuleNotFoundError at import; existing venvs kept working because
 # they already had 1.x. Lift the pin only together with the migration.
-mcp>=1.0,<2       # FastMCP server (quant_crawler.rag.mcp_server)
+mcp>=2.3.0,<3       # FastMCP server (quant_crawler.rag.mcp_server)
