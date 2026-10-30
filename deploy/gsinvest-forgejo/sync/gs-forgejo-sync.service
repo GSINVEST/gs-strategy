@@ -1,0 +1,6 @@
+[Unit]
+Description=Sync GitHub gs-strategy into Forgejo (read-only)
+
+[Service]
+Type=oneshot
+ExecStart=%h/gs-forgejo/gs-forgejo-sync.sh
