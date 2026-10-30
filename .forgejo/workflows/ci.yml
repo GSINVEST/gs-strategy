@@ -5,10 +5,11 @@ name: ci-forgejo
 # checkout 用 git、Python 用 uv。Forgejo 偵測到本目錄時會忽略 .github/workflows，所以不會重複執行。
 # 與 GitHub CI 一樣不需要 TEJAPI_KEY：合成期貨圖的等價測試用真的 Zipline、離線行事曆；
 # 授權資料的測試仍然 skip（看最後的 skipped 摘要）。
+# 觸發只開 main 與手動：host 模式 workflow 以 gsinvest 使用者身分執行，不對任意分支開放。
 
 on:
   push:
-    branches: [main, "ci-*"]
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -40,3 +41,23 @@ jobs:
       - name: Run pytest
         run: |
           .venv/bin/python -m pytest tests/ -q -rs --junit-xml=pytest-report.xml
+
+      - name: Summarise skipped tests
+        if: always()
+        run: |
+          .venv/bin/python - <<'PY'
+          import xml.etree.ElementTree as ET
+          try:
+              root = ET.parse("pytest-report.xml").getroot()
+          except OSError:
+              raise SystemExit("no pytest-report.xml")
+          skipped = [(c.get("classname"), c.get("name"), (s.get("message") or "")[:120])
+                     for c in root.iter("testcase") for s in c.findall("skipped")]
+          print(f"skipped: {len(skipped)}")
+          for cls, name, msg in skipped:
+              print(f"  {cls}::{name} -- {msg}")
+          PY
+
+      - name: Cleanup
+        if: always()
+        run: rm -rf .venv
