@@ -17,7 +17,9 @@ CONF = Path.home() / ".config" / "gs-dryrun"
 
 def push_snapshot(url: str, key: str, body: bytes, *, timeout: float = 30) -> int:
     req = urllib.request.Request(url, data=body, method="PUT", headers={
-        "Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+        "Authorization": f"Bearer {key}", "Content-Type": "application/json",
+        # Cloudflare 會擋 Python-urllib 預設的 User-Agent（403），要自報名稱
+        "User-Agent": "gs-dryrun-push/1"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.status

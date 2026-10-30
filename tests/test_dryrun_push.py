@@ -11,6 +11,7 @@ def _serve(status=204):
     class H(http.server.BaseHTTPRequestHandler):
         def do_PUT(self):
             got["auth"] = self.headers.get("Authorization")
+            got["ua"] = self.headers.get("User-Agent")
             got["body"] = self.rfile.read(int(self.headers["Content-Length"]))
             self.send_response(status)
             self.end_headers()
@@ -40,6 +41,7 @@ def test_push_sends_bearer_and_body():
     finally:
         srv.shutdown()
     assert code == 204 and got["auth"] == "Bearer KEY123" and got["body"] == b'{"a":1}'
+    assert got["ua"] and not got["ua"].startswith("Python-urllib")
 
 
 def test_cli_without_config_warns_and_exits_zero(tmp_path, monkeypatch, capsys):
