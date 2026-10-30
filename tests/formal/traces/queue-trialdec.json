@@ -1,0 +1,104 @@
+{
+  "description": "TLC 對 mutation-trialdec.cfg 回報的反例軌跡。Retire 把 trial 扣回去：trials 由 1 變 0，違反 TrialMonotone（只增不減）。正確的實作必須拒絕或忽略違規的那一步，不變量不得被違反。",
+  "source": "specs/tla/strategy-queue/mutation-trialdec.cfg（TLC 2.19，seed 1）",
+  "steps": [
+    {
+      "op": "prereg",
+      "id": "s1"
+    },
+    {
+      "op": "submit",
+      "id": "s1"
+    },
+    {
+      "op": "approve",
+      "id": "s1",
+      "tenant": "kevin"
+    },
+    {
+      "op": "retire",
+      "id": "s1"
+    }
+  ],
+  "model_states": {
+    "source": "TLC 2.19 輸出（mutation-trialdec.cfg，seed 1），由 tests/formal 的產生腳本解析轉錄（只留 status／runs／trials）",
+    "states": [
+      {
+        "after": "初始",
+        "status": {
+          "s1": "none",
+          "s2": "none"
+        },
+        "runs": {
+          "s1": 0,
+          "s2": 0
+        },
+        "trials": {
+          "s1": 0,
+          "s2": 0
+        }
+      },
+      {
+        "after": "prereg(s1)",
+        "status": {
+          "s1": "none",
+          "s2": "none"
+        },
+        "runs": {
+          "s1": 0,
+          "s2": 0
+        },
+        "trials": {
+          "s1": 0,
+          "s2": 0
+        }
+      },
+      {
+        "after": "submit(s1)",
+        "status": {
+          "s1": "pending",
+          "s2": "none"
+        },
+        "runs": {
+          "s1": 0,
+          "s2": 0
+        },
+        "trials": {
+          "s1": 0,
+          "s2": 0
+        }
+      },
+      {
+        "after": "approve(s1, kevin)",
+        "status": {
+          "s1": "approved",
+          "s2": "none"
+        },
+        "runs": {
+          "s1": 1,
+          "s2": 0
+        },
+        "trials": {
+          "s1": 1,
+          "s2": 0
+        }
+      },
+      {
+        "after": "retire(s1)",
+        "status": {
+          "s1": "retired",
+          "s2": "none"
+        },
+        "runs": {
+          "s1": 1,
+          "s2": 0
+        },
+        "trials": {
+          "s1": 0,
+          "s2": 0
+        },
+        "violates": "TrialMonotone"
+      }
+    ]
+  }
+}

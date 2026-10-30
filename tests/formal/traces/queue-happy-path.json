@@ -1,0 +1,9 @@
+{
+  "description": "手寫正常流程：prereg → 提交 → 核准 → 退出。一次回測、一次 trial，退出後 trial 不減。",
+  "steps": [
+    {"op": "prereg", "id": "s1"},
+    {"op": "submit", "id": "s1"},
+    {"op": "approve", "id": "s1", "tenant": "kevin"},
+    {"op": "retire", "id": "s1"}
+  ]
+}
