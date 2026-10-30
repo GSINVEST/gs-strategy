@@ -1,8 +1,8 @@
 FROM codeberg.org/forgejo/forgejo:9
 # pre-receive 腳本相依：decision.py 需 yaml；validation/__init__ 會 import numpy/scipy/pandas
-# nosemgrep: dockerfile.security.last-user-is-root.last-user-is-root
 # 刻意保持 root：Forgejo 官方映像的入口程式需以 root 啟動，再依 compose 的 USER_UID/USER_GID 降權為 git；
 # 加 `USER git` 會讓容器起不來。下方只裝套件與複製檔案，不新增任何以 root 常駐的程序。
+# nosemgrep: dockerfile.security.last-user-is-root.last-user-is-root
 USER root
 RUN apk add --no-cache python3 py3-yaml py3-numpy py3-scipy py3-pandas
 # 固定版本的 hook，與被推送的 repo 分離（spec §5.2）；升級走 PR + 手動 build。
