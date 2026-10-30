@@ -1,0 +1,26 @@
+{
+ "variant": "vvs_default",
+ "model": "ShimVVS(volume_limit=0.05, eta=<varies>)",
+ "strategy": "tsmom_tx_mtx",
+ "start": "2018-01-01",
+ "end": "2026-04-30",
+ "final_value": 21303982.54295387,
+ "net_return_pct": 113.0398254295387,
+ "sharpe_ann": 0.722174411667231,
+ "n_days": 2023,
+ "n_fills": 248,
+ "contracts_traded": 1102.0,
+ "slip_total_pts": 0.25480104479902366,
+ "slip_total_ntd": 17.45704612640111,
+ "slip_mean_pts_per_contract": 0.00023121691905537536,
+ "slip_max_pts": 0.0010998231737175956,
+ "roots": [
+  "MTX",
+  "TX"
+ ],
+ "psi_median": 0.00015725690267785384,
+ "psi_max": 0.0017171917310613565,
+ "adv_median": 17594.15,
+ "sigma_median": 0.15831976205028614,
+ "n_nodata_fallback": 0
+}

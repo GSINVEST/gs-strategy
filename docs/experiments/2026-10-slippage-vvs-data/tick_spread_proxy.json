@@ -1,0 +1,302 @@
+{
+ "TX_2023": [
+  {
+   "session": "day",
+   "trade_level": {
+    "days": 239,
+    "neg_cov_days_pct": 100.0,
+    "pooled_cov": -0.1336,
+    "roll_spread_pooled": 0.731,
+    "roll_spread_daily_median": 0.728,
+    "roll_spread_daily_p90": 0.773
+   },
+   "one_second": {
+    "days": 239,
+    "neg_cov_days_pct": 100.0,
+    "pooled_cov": -0.2484,
+    "roll_spread_pooled": 0.997,
+    "roll_spread_daily_median": 0.995,
+    "roll_spread_daily_p90": 1.059
+   },
+   "nonzero_change_share_mean": 0.307,
+   "avg_trades_per_day": 48765,
+   "avg_daily_volume_bs": 159099,
+   "avg_daily_hi_lo": 135.4,
+   "avg_price": 16385.0
+  },
+  {
+   "session": "night",
+   "trade_level": {
+    "days": 291,
+    "neg_cov_days_pct": 100.0,
+    "pooled_cov": -0.1102,
+    "roll_spread_pooled": 0.664,
+    "roll_spread_daily_median": 0.624,
+    "roll_spread_daily_p90": 0.7
+   },
+   "one_second": {
+    "days": 291,
+    "neg_cov_days_pct": 99.7,
+    "pooled_cov": -0.192,
+    "roll_spread_pooled": 0.876,
+    "roll_spread_daily_median": 0.866,
+    "roll_spread_daily_p90": 0.987
+   },
+   "nonzero_change_share_mean": 0.299,
+   "avg_trades_per_day": 23046,
+   "avg_daily_volume_bs": 74331,
+   "avg_daily_hi_lo": 138.7,
+   "avg_price": 16372.0
+  }
+ ],
+ "TX_2024": [
+  {
+   "session": "day",
+   "trade_level": {
+    "days": 241,
+    "neg_cov_days_pct": 100.0,
+    "pooled_cov": -0.2993,
+    "roll_spread_pooled": 1.094,
+    "roll_spread_daily_median": 0.973,
+    "roll_spread_daily_p90": 1.252
+   },
+   "one_second": {
+    "days": 241,
+    "neg_cov_days_pct": 100.0,
+    "pooled_cov": -0.4585,
+    "roll_spread_pooled": 1.354,
+    "roll_spread_daily_median": 1.267,
+    "roll_spread_daily_p90": 1.622
+   },
+   "nonzero_change_share_mean": 0.415,
+   "avg_trades_per_day": 57619,
+   "avg_daily_volume_bs": 172120,
+   "avg_daily_hi_lo": 258.0,
+   "avg_price": 21407.0
+  },
+  {
+   "session": "night",
+   "trade_level": {
+    "days": 302,
+    "neg_cov_days_pct": 100.0,
+    "pooled_cov": -0.2626,
+    "roll_spread_pooled": 1.025,
+    "roll_spread_daily_median": 0.841,
+    "roll_spread_daily_p90": 1.253
+   },
+   "one_second": {
+    "days": 302,
+    "neg_cov_days_pct": 99.0,
+    "pooled_cov": -0.3811,
+    "roll_spread_pooled": 1.235,
+    "roll_spread_daily_median": 1.173,
+    "roll_spread_daily_p90": 1.564
+   },
+   "nonzero_change_share_mean": 0.413,
+   "avg_trades_per_day": 33910,
+   "avg_daily_volume_bs": 98538,
+   "avg_daily_hi_lo": 265.6,
+   "avg_price": 21398.0
+  }
+ ],
+ "TX_2025": [
+  {
+   "session": "day",
+   "trade_level": {
+    "days": 243,
+    "neg_cov_days_pct": 99.2,
+    "pooled_cov": -0.3159,
+    "roll_spread_pooled": 1.124,
+    "roll_spread_daily_median": 1.078,
+    "roll_spread_daily_p90": 1.245
+   },
+   "one_second": {
+    "days": 243,
+    "neg_cov_days_pct": 99.2,
+    "pooled_cov": -0.5426,
+    "roll_spread_pooled": 1.473,
+    "roll_spread_daily_median": 1.452,
+    "roll_spread_daily_p90": 1.603
+   },
+   "nonzero_change_share_mean": 0.462,
+   "avg_trades_per_day": 42874,
+   "avg_daily_volume_bs": 123449,
+   "avg_daily_hi_lo": 270.5,
+   "avg_price": 23930.0
+  },
+  {
+   "session": "night",
+   "trade_level": {
+    "days": 297,
+    "neg_cov_days_pct": 100.0,
+    "pooled_cov": -0.2209,
+    "roll_spread_pooled": 0.94,
+    "roll_spread_daily_median": 0.848,
+    "roll_spread_daily_p90": 1.041
+   },
+   "one_second": {
+    "days": 297,
+    "neg_cov_days_pct": 99.3,
+    "pooled_cov": -0.4385,
+    "roll_spread_pooled": 1.324,
+    "roll_spread_daily_median": 1.251,
+    "roll_spread_daily_p90": 1.551
+   },
+   "nonzero_change_share_mean": 0.472,
+   "avg_trades_per_day": 27922,
+   "avg_daily_volume_bs": 77061,
+   "avg_daily_hi_lo": 312.5,
+   "avg_price": 23924.0
+  }
+ ],
+ "MTX_2023": [
+  {
+   "session": "day",
+   "trade_level": {
+    "days": 239,
+    "neg_cov_days_pct": 100.0,
+    "pooled_cov": -0.1847,
+    "roll_spread_pooled": 0.859,
+    "roll_spread_daily_median": 0.84,
+    "roll_spread_daily_p90": 0.897
+   },
+   "one_second": {
+    "days": 239,
+    "neg_cov_days_pct": 100.0,
+    "pooled_cov": -0.2597,
+    "roll_spread_pooled": 1.019,
+    "roll_spread_daily_median": 1.017,
+    "roll_spread_daily_p90": 1.066
+   },
+   "nonzero_change_share_mean": 0.317,
+   "avg_trades_per_day": 90568,
+   "avg_daily_volume_bs": 262550,
+   "avg_daily_hi_lo": 135.6,
+   "avg_price": 16384.0
+  },
+  {
+   "session": "night",
+   "trade_level": {
+    "days": 291,
+    "neg_cov_days_pct": 100.0,
+    "pooled_cov": -0.1459,
+    "roll_spread_pooled": 0.764,
+    "roll_spread_daily_median": 0.719,
+    "roll_spread_daily_p90": 0.791
+   },
+   "one_second": {
+    "days": 291,
+    "neg_cov_days_pct": 100.0,
+    "pooled_cov": -0.2157,
+    "roll_spread_pooled": 0.929,
+    "roll_spread_daily_median": 0.917,
+    "roll_spread_daily_p90": 1.005
+   },
+   "nonzero_change_share_mean": 0.281,
+   "avg_trades_per_day": 51527,
+   "avg_daily_volume_bs": 149211,
+   "avg_daily_hi_lo": 138.9,
+   "avg_price": 16373.0
+  }
+ ],
+ "MTX_2024": [
+  {
+   "session": "day",
+   "trade_level": {
+    "days": 241,
+    "neg_cov_days_pct": 100.0,
+    "pooled_cov": -0.325,
+    "roll_spread_pooled": 1.14,
+    "roll_spread_daily_median": 1.029,
+    "roll_spread_daily_p90": 1.234
+   },
+   "one_second": {
+    "days": 241,
+    "neg_cov_days_pct": 99.6,
+    "pooled_cov": -0.3614,
+    "roll_spread_pooled": 1.202,
+    "roll_spread_daily_median": 1.166,
+    "roll_spread_daily_p90": 1.427
+   },
+   "nonzero_change_share_mean": 0.394,
+   "avg_trades_per_day": 112162,
+   "avg_daily_volume_bs": 306623,
+   "avg_daily_hi_lo": 257.8,
+   "avg_price": 21406.0
+  },
+  {
+   "session": "night",
+   "trade_level": {
+    "days": 302,
+    "neg_cov_days_pct": 100.0,
+    "pooled_cov": -0.3337,
+    "roll_spread_pooled": 1.155,
+    "roll_spread_daily_median": 0.963,
+    "roll_spread_daily_p90": 1.39
+   },
+   "one_second": {
+    "days": 302,
+    "neg_cov_days_pct": 99.7,
+    "pooled_cov": -0.352,
+    "roll_spread_pooled": 1.187,
+    "roll_spread_daily_median": 1.14,
+    "roll_spread_daily_p90": 1.449
+   },
+   "nonzero_change_share_mean": 0.369,
+   "avg_trades_per_day": 78350,
+   "avg_daily_volume_bs": 213781,
+   "avg_daily_hi_lo": 265.5,
+   "avg_price": 21399.0
+  }
+ ],
+ "MTX_2025": [
+  {
+   "session": "day",
+   "trade_level": {
+    "days": 243,
+    "neg_cov_days_pct": 99.2,
+    "pooled_cov": -0.3457,
+    "roll_spread_pooled": 1.176,
+    "roll_spread_daily_median": 1.127,
+    "roll_spread_daily_p90": 1.291
+   },
+   "one_second": {
+    "days": 243,
+    "neg_cov_days_pct": 99.2,
+    "pooled_cov": -0.4623,
+    "roll_spread_pooled": 1.36,
+    "roll_spread_daily_median": 1.334,
+    "roll_spread_daily_p90": 1.498
+   },
+   "nonzero_change_share_mean": 0.426,
+   "avg_trades_per_day": 83325,
+   "avg_daily_volume_bs": 230030,
+   "avg_daily_hi_lo": 270.8,
+   "avg_price": 23928.0
+  },
+  {
+   "session": "night",
+   "trade_level": {
+    "days": 297,
+    "neg_cov_days_pct": 100.0,
+    "pooled_cov": -0.3016,
+    "roll_spread_pooled": 1.098,
+    "roll_spread_daily_median": 0.999,
+    "roll_spread_daily_p90": 1.221
+   },
+   "one_second": {
+    "days": 297,
+    "neg_cov_days_pct": 100.0,
+    "pooled_cov": -0.4251,
+    "roll_spread_pooled": 1.304,
+    "roll_spread_daily_median": 1.25,
+    "roll_spread_daily_p90": 1.471
+   },
+   "nonzero_change_share_mean": 0.411,
+   "avg_trades_per_day": 66231,
+   "avg_daily_volume_bs": 180531,
+   "avg_daily_hi_lo": 312.4,
+   "avg_price": 23923.0
+  }
+ ]
+}
