@@ -38,3 +38,5 @@
 *.parquet binary
 *.zip   binary
 *.tar.gz binary
+*.sh text eol=lf
+dockerfile/dryrun/* text eol=lf

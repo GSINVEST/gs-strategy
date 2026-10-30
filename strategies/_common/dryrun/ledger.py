@@ -125,12 +125,27 @@ class DryLedger:
             "SELECT session, equity FROM dry_daily WHERE run_id=? AND scenario=? AND status='OK'",
             (run_id, scenario))}
 
+    def resume_watermark(self, run_id: int) -> str:
+        """最後一次 RESUMED 當下已記錄的最後一個交易日；之後才算新的缺漏（否則暫停無法恢復）。"""
+        row = self._conn.execute(
+            "SELECT detail FROM dry_events WHERE run_id=? AND kind='RESUMED' "
+            "ORDER BY event_id DESC LIMIT 1", (run_id,)).fetchone()
+        if row and row["detail"] and row["detail"].startswith("watermark="):
+            return row["detail"].split(";")[0][len("watermark="):]
+        return ""
+
+    def last_recorded_session(self, run_id: int) -> str:
+        row = self._conn.execute("SELECT max(session) AS s FROM dry_daily WHERE run_id=?",
+                                 (run_id,)).fetchone()
+        return row["s"] or ""
+
     def trailing_missing(self, run_id: int) -> int:
+        mark = self.resume_watermark(run_id)
         n = 0
         for r in self._conn.execute(
-                "SELECT status FROM dry_daily WHERE run_id=? AND scenario='base' ORDER BY session DESC",
-                (run_id,)):
-            if r["status"] != "MISSING":
+                "SELECT status, session FROM dry_daily WHERE run_id=? AND scenario='base' "
+                "ORDER BY session DESC", (run_id,)):
+            if r["status"] != "MISSING" or r["session"] <= mark:
                 break
             n += 1
         return n

@@ -1,0 +1,50 @@
+name: gs-dryrun
+
+# 必填環境變數（見 docs/spec/dryrun-deploy.md）：
+#   DRYRUN_REPO     唯讀掛入的 gs-strategy 乾淨 checkout（含 log/promotions.jsonl）
+#   ZIPLINE_DATA    主機的 ~/.zipline/data（唯讀）
+#   DRYRUN_LEDGER_DIR 帳本目錄（主機路徑，名稱含 dry；唯一可寫的掛載）
+#   DRYRUN_ENV_FILE 只含 TEJAPI_KEY、TEJAPI_BASE 的 env 檔（不得有任何券商變數）
+services:
+  egress-proxy:
+    build:
+      context: ../..
+      dockerfile: dockerfile/dryrun/Dockerfile.proxy
+    image: gs-dryrun-proxy:local
+    restart: unless-stopped
+    networks: [dry_internal, dry_egress]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  dryrun:
+    image: gs-dryrun:local
+    profiles: ["run"]          # 只用 `docker compose run`，不常駐
+    depends_on: [egress-proxy]
+    networks: [dry_internal]   # internal：沒有任何直連外網的路
+    env_file: ${DRYRUN_ENV_FILE:?set DRYRUN_ENV_FILE}
+    environment:
+      HTTPS_PROXY: http://egress-proxy:3128
+      HTTP_PROXY: http://egress-proxy:3128
+      NO_PROXY: egress-proxy,localhost,127.0.0.1
+      DRYRUN_EGRESS_ALLOW: egress-proxy   # 行程內 guard 放行代理；目的地由代理的白名單決定
+      DRYRUN_LEDGER: /dryrun-ledger/dry_ledger.sqlite
+    # 以主機使用者的 uid 執行，才讀得到權限 700 的 bundle 與寫得進帳本目錄（run_daily／verify 會 export）
+    user: "${DRYRUN_UID:-10001}:${DRYRUN_GID:-10001}"
+    read_only: true
+    # rootfs 唯讀；TejToolAPI 匯入時會在自己的套件目錄寫 temp/ 快取，所以那個目錄掛 tmpfs（每次執行重取）
+    tmpfs:
+      - /tmp:mode=1777
+      - /zipline:mode=1777   # zipline 啟動時會在 ZIPLINE_ROOT 建 extension.py；data 子目錄另以唯讀掛載疊在上面
+      - /usr/local/lib/python3.11/site-packages/TejToolAPI/temp:mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - ${DRYRUN_REPO:?set DRYRUN_REPO}:/app:ro
+      - ${ZIPLINE_DATA:?set ZIPLINE_DATA}:/zipline/data:ro
+      - ${DRYRUN_LEDGER_DIR:?set DRYRUN_LEDGER_DIR}:/dryrun-ledger   # 唯一可寫；放在 /app 之外，唯讀 bind mount 底下不能再建掛載點
+
+networks:
+  dry_internal:
+    internal: true
+  dry_egress: {}
+

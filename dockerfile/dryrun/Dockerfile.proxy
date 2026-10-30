@@ -1,0 +1,11 @@
+# 出口白名單代理：dry run 容器所在網路是 internal（無外網），唯一的出口就是這個代理，
+# 且只允許 CONNECT 到 squid.conf 列的網域。
+FROM debian:12-slim
+RUN apt-get update && apt-get install -y --no-install-recommends squid \
+ && rm -rf /var/lib/apt/lists/*
+COPY dockerfile/dryrun/squid.conf /etc/squid/squid.conf
+# cap_drop: ALL 之下 root 無法 setgid，squid 直接以 proxy 使用者啟動
+RUN mkdir -p /var/spool/squid /var/log/squid && chown -R proxy:proxy /var/spool/squid /var/log/squid /etc/squid
+USER proxy
+EXPOSE 3128
+CMD ["squid", "-N", "-f", "/etc/squid/squid.conf"]
