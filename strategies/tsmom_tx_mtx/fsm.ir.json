@@ -1,0 +1,141 @@
+{
+  "ir_version": "strategy-fsm-ir/0.1.1",
+  "id": "tsmom_tx_mtx",
+  "title_zh": "波動率目標時間序列動能（大台＋小台，月調倉）",
+  "provenance": {
+    "method": "hand_from_code",
+    "extracted_on": "2026-11-02",
+    "extracted_by": "Claude（手抽，未經人審；定位為基準而非已簽核規格）",
+    "sources": [
+      { "repo": "gs-strategy", "repo_commit": "6ae4209f656c852917b5664676f87cf3a0835e03", "path": "strategies/tsmom_tx_mtx/strategy.py", "sha256_lf": "00b3c47d3a4dacdffdb1fc1bcc572a0bcf61d0e19115a8b73c29aed97acbe60e" },
+      { "repo": "gs-strategy", "repo_commit": "6ae4209f656c852917b5664676f87cf3a0835e03", "path": "strategies/tsmom_tx_mtx/config.yaml", "sha256_lf": "591b961d0c258b4e2d4c36f6c822f6e02d209af6736540c818412d1f0b0c3285" },
+      { "repo": "gs-strategy", "repo_commit": "6ae4209f656c852917b5664676f87cf3a0835e03", "path": "strategies/_common/futures_setup.py", "sha256_lf": "de6216950a6836870d1b5d6cdadb41c9745d700a238d2bd0e5395b7e578e292c" }
+    ]
+  },
+  "scope": { "kind": "per_instrument", "instances": ["TX", "MTX"] },
+  "time": {
+    "unit": "bar", "bar": "1d", "decision_point": "market_close",
+    "calendar": "TEJ_morning_future（runner 預設，config.yaml 未指定）",
+    "fill_timing": { "todo": "TODO(人)", "reason": "成交發生在同一根還是下一根 bar 取決於 zipline-tej 日頻成交模型；本次未實測，不猜。" }
+  },
+  "instruments": [
+    { "id": "TX", "multiplier": 200, "multiplier_unit": "NTD/index_point", "multiplier_source": "strategy.py:POINT_VALUE['TX']", "tick_size": { "todo": "TODO(人)", "reason": "策略碼與設定檔都沒有最小跳動點；需查交易所規格。" } },
+    { "id": "MTX", "multiplier": 50, "multiplier_unit": "NTD/index_point", "multiplier_source": "strategy.py:POINT_VALUE['MTX']", "tick_size": { "todo": "TODO(人)", "reason": "同上。" } }
+  ],
+  "data": [
+    { "name": "close", "source": "bundle tquant_future，make_continuous_taiwan_futures(['TX','MTX'])（calendar roll、add 調整）", "field": "close", "instrument": "TX,MTX（每個標的各一條）", "frequency": "1d", "adjustment": "add（加法調整，連續合約價）", "available_at": "當根 bar 收盤後（data.history 含當日收盤）", "history_bars": 278 }
+  ],
+  "constants": [
+    { "name": "lookback", "value": 252, "unit": "bars", "source": "config.yaml:params.lookback" },
+    { "name": "skip", "value": 21, "unit": "bars", "source": "config.yaml:params.skip" },
+    { "name": "vol_com", "value": 60, "unit": "bars", "source": "config.yaml:params.vol_com" },
+    { "name": "target_vol", "value": 0.15, "unit": "annualised", "source": "config.yaml:params.target_vol" },
+    { "name": "max_gross_leverage", "value": 1.5, "unit": "x portfolio_value", "source": "config.yaml:params.max_gross_leverage" },
+    { "name": "allow_short", "value": true, "source": "config.yaml:params.allow_short" },
+    { "name": "days_before_close", "value": 10, "unit": "days", "source": "config.yaml:params.days_before_close" },
+    { "name": "capital_base", "value": 10000000, "unit": "NTD", "source": "config.yaml:capital_base" }
+  ],
+  "variables": [
+    { "name": "position", "type": "int", "unit": "contracts", "origin": "strategy_code", "per_instance": true, "init": 0,
+      "range": { "todo": "TODO(人)", "reason": "口數 = round(權重 × 淨值 ÷ (價格 × 乘數))，程式碼沒有口數硬上限，只有權重層級的 max_gross_leverage。TLA+ 需要一個有限界，必須由人給（或由人同意用 max_gross_leverage ÷ 最低價格推出）。" },
+      "source": "strategy.py:_rebalance n_contracts" },
+    { "name": "price_pts", "type": "price_points", "unit": "index_points", "origin": "model_only", "per_instance": true, "init": 0,
+      "range": { "todo": "TODO(人)", "reason": "同 position，待人決定模型界。" }, "source": "model_only" },
+    { "name": "entry_pts", "type": "price_points", "unit": "index_points", "origin": "model_only", "per_instance": true, "init": 0,
+      "range": { "todo": "TODO(人)", "reason": "同 position，待人決定模型界。" }, "source": "model_only" }
+  ],
+  "signals": [
+    {
+      "id": "tsmom_target",
+      "label_zh": "目標口數（波動率目標）",
+      "kind": "opaque",
+      "impl_ref": { "file": "strategies/tsmom_tx_mtx/strategy.py", "function": "_rebalance（_signed_momentum、_ewma_vol、跨標的歸一與總槓桿縮放後的 n_contracts）" },
+      "inputs": ["close"],
+      "domain": { "kind": "int_range", "lo": { "todo": "TODO(人)", "reason": "下界＝ position 的 range 下界，待人決定模型界（程式碼無口數硬上限）。" }, "hi": { "todo": "TODO(人)", "reason": "上界同理。" }, "extra_values": ["NO_SIGNAL"] },
+      "zone_rule_zh": "每標的符號 = sign(skip 後 lookback 的對數報酬)；大小 = target_vol ÷ EWMA 波動 ÷ 有訊號的標的數，再把總槓桿縮到 max_gross_leverage；換算成口數時四捨五入。標的間經『有訊號的標的數』與『總槓桿縮放』耦合——單一標的機器看不到這個耦合。",
+      "tlc_abstraction": "nondeterministic"
+    }
+  ],
+  "states": [
+    { "id": "FLAT", "label_zh": "空手", "predicate": "position == 0" },
+    { "id": "LONG", "label_zh": "持有多單", "predicate": "position > 0" },
+    { "id": "SHORT", "label_zh": "持有空單", "predicate": "position < 0" }
+  ],
+  "initial_state": "FLAT",
+  "events": [
+    { "id": "REBALANCE", "label_zh": "月初調倉", "kind": "scheduled", "source": "strategy.py:initialize schedule_function(_rebalance, month_start, market_close)" },
+    { "id": "ROLL_DUE", "label_zh": "換月檢查", "kind": "scheduled", "source": "_common/futures_setup.py:make_roll_futures_handler，每日收盤" },
+    { "id": "GAP", "label_zh": "跳空", "kind": "adverse", "source": "壓力場景，非策略程式" },
+    { "id": "LIQUIDITY_GONE", "label_zh": "流動性歸零（這根下的單成交不了）", "kind": "adverse", "source": "壓力場景，非策略程式" }
+  ],
+  "transitions": [
+    { "id": "T_FLAT_TO_LONG", "label_zh": "空手 → 做多", "from": ["FLAT"], "on": "REBALANCE", "guard": "tsmom_target != NO_SIGNAL and tsmom_target > 0", "to": "LONG",
+      "effects": [{ "var": "position", "expr": "tsmom_target" }, { "var": "entry_pts", "expr": "price_pts" }],
+      "orders": [{ "instrument": "$self", "kind": "target_position", "target": "tsmom_target", "fills": 1 }], "code_ref": "strategy.py:_rebalance  n_contracts != qty → order_target（instrument 欄於 per_instrument 範圍內代表『該實例的標的』）" },
+    { "id": "T_FLAT_TO_SHORT", "label_zh": "空手 → 做空", "from": ["FLAT"], "on": "REBALANCE", "guard": "tsmom_target != NO_SIGNAL and tsmom_target < 0", "to": "SHORT",
+      "effects": [{ "var": "position", "expr": "tsmom_target" }, { "var": "entry_pts", "expr": "price_pts" }],
+      "orders": [{ "instrument": "$self", "kind": "target_position", "target": "tsmom_target", "fills": 1 }], "code_ref": "同上" },
+    { "id": "T_LONG_TO_FLAT", "label_zh": "多單 → 平倉", "from": ["LONG"], "on": "REBALANCE", "guard": "tsmom_target != NO_SIGNAL and tsmom_target == 0", "to": "FLAT",
+      "effects": [{ "var": "position", "expr": "0" }],
+      "orders": [{ "instrument": "$self", "kind": "target_position", "target": "0", "fills": 1 }], "code_ref": "同上" },
+    { "id": "T_LONG_TO_SHORT", "label_zh": "多單 → 一步翻空", "from": ["LONG"], "on": "REBALANCE", "guard": "tsmom_target != NO_SIGNAL and tsmom_target < 0", "to": "SHORT",
+      "effects": [{ "var": "position", "expr": "tsmom_target" }, { "var": "entry_pts", "expr": "price_pts" }],
+      "orders": [{ "instrument": "$self", "kind": "target_position", "target": "tsmom_target", "fills": 1 }], "code_ref": "同上" },
+    { "id": "T_LONG_RESIZE", "label_zh": "多單 → 調整口數", "from": ["LONG"], "on": "REBALANCE", "guard": "tsmom_target != NO_SIGNAL and tsmom_target > 0 and tsmom_target != position", "to": "LONG",
+      "effects": [{ "var": "position", "expr": "tsmom_target" }],
+      "orders": [{ "instrument": "$self", "kind": "target_position", "target": "tsmom_target", "fills": 1 }], "code_ref": "同上" },
+    { "id": "T_SHORT_TO_FLAT", "label_zh": "空單 → 平倉", "from": ["SHORT"], "on": "REBALANCE", "guard": "tsmom_target != NO_SIGNAL and tsmom_target == 0", "to": "FLAT",
+      "effects": [{ "var": "position", "expr": "0" }],
+      "orders": [{ "instrument": "$self", "kind": "target_position", "target": "0", "fills": 1 }], "code_ref": "同上" },
+    { "id": "T_SHORT_TO_LONG", "label_zh": "空單 → 一步翻多", "from": ["SHORT"], "on": "REBALANCE", "guard": "tsmom_target != NO_SIGNAL and tsmom_target > 0", "to": "LONG",
+      "effects": [{ "var": "position", "expr": "tsmom_target" }, { "var": "entry_pts", "expr": "price_pts" }],
+      "orders": [{ "instrument": "$self", "kind": "target_position", "target": "tsmom_target", "fills": 1 }], "code_ref": "同上" },
+    { "id": "T_SHORT_RESIZE", "label_zh": "空單 → 調整口數", "from": ["SHORT"], "on": "REBALANCE", "guard": "tsmom_target != NO_SIGNAL and tsmom_target < 0 and tsmom_target != position", "to": "SHORT",
+      "effects": [{ "var": "position", "expr": "tsmom_target" }],
+      "orders": [{ "instrument": "$self", "kind": "target_position", "target": "tsmom_target", "fills": 1 }], "code_ref": "同上" },
+    { "id": "T_ROLL_LONG", "label_zh": "多單接近到期：平舊月、開新月（口數不變）", "from": ["LONG"], "on": "ROLL_DUE", "guard": "true", "to": "LONG",
+      "effects": [], "orders": [{ "instrument": "$self", "kind": "close_and_reopen_on_front", "target": "position", "fills": 2 }], "code_ref": "_common/futures_setup.py:roll_futures" },
+    { "id": "T_ROLL_SHORT", "label_zh": "空單接近到期：平舊月、開新月（口數不變）", "from": ["SHORT"], "on": "ROLL_DUE", "guard": "true", "to": "SHORT",
+      "effects": [], "orders": [{ "instrument": "$self", "kind": "close_and_reopen_on_front", "target": "position", "fills": 2 }], "code_ref": "_common/futures_setup.py:roll_futures" }
+  ],
+  "costs": {
+    "commission": { "model": "per_contract_per_fill", "per_instrument": { "TX": 200, "MTX": 100 }, "unit": "NTD/contract/fill", "source": "config.yaml:params.per_contract_cost → PerContract(cost=…, exchange_fee=0)" },
+    "slippage": {
+      "model": "fixed_points", "spread_points": 6.0,
+      "adverse_points_per_fill": { "todo": "TODO(人)", "reason": "FixedSlippage(spread=6.0) 是整個價差還是每筆吃一半？以 zipline-tej 實際原始碼為準，本次未查。另外 TX 與 MTX 共用同一個點數，MTX 每點只值 50 元，是否合理未評估（屬成本假設的合理性，不在 TLA+ 範圍）。" },
+      "unit": "index_points", "source": "config.yaml:params.spread_points → FixedSlippage(spread=…)"
+    },
+    "not_modeled": ["期貨交易稅", "保證金占用與資金成本", "換月價差", "交易所／期貨商其他費用（exchange_fee 設為 0）"]
+  },
+  "invariants": [
+    { "id": "INV_STATE_CONSISTENT", "label_zh": "狀態名稱與實際部位一致", "expr": "state_predicate_holds", "origin": "code_derived", "enforced_in_code": "unknown", "status": "confirmed", "tlc_profile": "core", "vacuity_note": "IR 自身一致性檢查，不是策略性質。" },
+    { "id": "INV_NO_OPPOSITE_POSITION", "label_zh": "同商品不會同時持有反向部位", "expr": "position 為單一帶號淨部位", "origin": "trader_stated", "enforced_in_code": true, "status": "confirmed", "tlc_profile": "core", "kind": "no_opposite_position", "representation": "net_position", "vacuity_note": "淨部位表示法下恆成立，TLC 通過不帶資訊量。TX 與 MTX 是不同商品，彼此可反向（TX 多、MTX 空），程式碼不禁止；若交易員視同一指數為同商品，需明說，再於 aggregate_invariants 加『跨標的淨額』性質。" },
+    { "id": "INV_MAX_TRADE_LOSS", "label_zh": "單筆交易（含未實現）虧損不超過總資金 2%", "expr": "|口數| × (entry_pts − price_pts) × 乘數 <= 0.02 × capital_base（逐標的）", "origin": "template_proposed", "enforced_in_code": false, "status": "proposed_needs_human", "tlc_profile": "stress", "vacuity_note": "策略程式沒有停損；2% 是範本建議值，需交易員確認。" }
+  ],
+  "aggregate_invariants": [
+    { "id": "INV_GROSS_LEVERAGE_AT_REBALANCE", "label_zh": "調倉後總名目槓桿不超過 max_gross_leverage（四捨五入與價格變動會造成偏離）",
+      "over": "instances", "fn": "sum", "term": "abs(position) * close * $mult", "op": "<=", "rhs": "max_gross_leverage * $equity",
+      "holds_at": "after_events", "holds_after": ["REBALANCE"], "origin": "code_derived", "enforced_in_code": "unknown", "status": "confirmed", "tlc_profile": "stress",
+      "vacuity_note": "程式碼只在『權重』上保證，口數四捨五入後可能略超。TLA+ 要檢查它需要絕對價格與淨值模型，目前產生器不支援（遇到會拒絕並說明）。" }
+  ],
+  "stress": [
+    { "id": "STRESS_GAP", "label_zh": "開盤跳空", "kind": "gap", "tlc_encoding": "nondeterministic_action", "params": { "gap_points": { "todo": "TODO(人)", "reason": "最大可接受跳空點數由人決定。" } }, "status": "template_default" },
+    { "id": "STRESS_CONSECUTIVE_ADVERSE", "label_zh": "連續逆向走勢", "kind": "consecutive_adverse", "tlc_encoding": "nondeterministic_action", "params": { "max_consecutive_bars": { "todo": "TODO(人)", "reason": "連續幾根由人決定。" } }, "status": "template_default", "note": "月調倉策略在兩次調倉之間完全沒有出場機制；逆向走勢可持續整個月。" },
+    { "id": "STRESS_LIQUIDITY_ZERO", "label_zh": "流動性歸零", "kind": "liquidity_zero", "tlc_encoding": "nondeterministic_action", "params": { "max_consecutive_bars": { "todo": "TODO(人)", "reason": "持續幾根由人決定。" } }, "status": "template_default" }
+  ],
+  "open_findings": [
+    "ROLL_DUE 每日檢查，但調倉只在月初；兩者同日時的先後與未成交單的交互未實測（同 vgrsi_tx）。",
+    "sigma<=0 或資料不足的標的在 _rebalance 被 continue 略過，其既有部位不會被平倉（保持不動）。IR 以 NO_SIGNAL 表示；是否為作者本意待確認。",
+    "『有訊號的標的數』進入分母（n_assets），一個標的 NO_SIGNAL 會讓另一個標的權重放大；這是跨標的耦合，per_instrument 機器表達不了。"
+  ],
+  "out_of_scope": [
+    "時間序列動能有沒有預測力、12-1 回看是否合適",
+    "target_vol、lookback、skip、vol_com 是不是好參數（參數優化／敏感度）",
+    "DSR、PBO、CPCV、成本壓力下的統計有效性（屬 D1 晉升閘門）",
+    "回測績效數字、夏普值、樣本外表現",
+    "EWMA 波動與口數換算的數值是否正確（訊號為不透明函式）",
+    "盤中（tick 內）行為、委託簿、部分成交",
+    "保證金追繳、強制平倉、券商與交易所異常",
+    "跨標的耦合（歸一化與總槓桿縮放）的數值行為"
+  ]
+}

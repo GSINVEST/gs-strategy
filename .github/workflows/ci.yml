@@ -56,6 +56,10 @@ jobs:
           python scripts/check_append_only.py \
             --rev-range "origin/${{ github.base_ref }}...HEAD"
 
+      - name: FSM IR 漂移偵測（strategies/*/fsm.ir.json 記的來源檔 hash）
+        # 只偵測『來源檔改過、IR 可能過期』；schema／語意檢查在 genesis-deck 的 validate_ir.py。
+        run: python scripts/check_fsm_ir_drift.py
+
       - name: Run pytest
         # env:
         #   TEJAPI_KEY: ${{ secrets.TEJAPI_KEY }}
