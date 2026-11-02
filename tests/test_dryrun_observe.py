@@ -156,7 +156,7 @@ def test_rescreen_blocked_same_content_keeps_observing_and_refreshes_reason(worl
     assert not R.is_promoted("vgrsi_tx", R.strategy_sha256(world["sdir"]), world["reg"])
     snap = snapshot.build_snapshot(world["ledger"], world["root"], now=NOW, include_observing=True,
                                    registry=world["reg"])
-    assert snap["runs"][0]["d1"]["reasons"] == ["DSR 0.93 < 0.95"]      # 失敗原因跟著最新重篩
+    assert snap["runs"][0]["d1"]["reasons"] == ["DSR 0.930 < 0.95"]      # 失敗原因跟著最新重篩
 
 
 def test_changed_strategy_content_pauses_observing(world):
@@ -174,8 +174,15 @@ def test_changed_strategy_content_pauses_observing(world):
 def test_d1_summary_reasons():
     rec = {"ts": "t", "report": _report(BLOCKED_CHECKS).to_dict()}
     s = d1_summary(rec)
-    assert s["verdict"] == "blocked" and s["reasons"] == ["DSR 0.94 < 0.95"]
+    assert s["verdict"] == "blocked" and s["reasons"] == ["DSR 0.941 < 0.95"]
     assert s["pending"] == ["pbo"]                                      # 尚未完成的不算失敗原因
+
+
+def test_reason_never_rounds_up_to_the_bound():
+    from strategies._common.dryrun.d1view import _reason
+    assert _reason({"name": "dsr", "value": 0.9496, "threshold": "DSR>0.95"}) == "DSR 0.949 < 0.95"
+    assert _reason({"name": "dsr", "value": 0.94999, "threshold": "DSR>0.95"}) == "DSR 0.949 < 0.95"
+    assert _reason({"name": "pbo", "value": 0.5004, "threshold": "PBO<0.5"}) == "PBO 0.500 ≥ 0.5"
 
 
 def test_snapshot_tier_and_label(world):
@@ -189,7 +196,7 @@ def test_snapshot_tier_and_label(world):
     assert snap["schema"] == "strategy-live-snapshot/2"
     r = snap["runs"][0]
     assert r["tier"] == "observing" and r["label"] == LABEL == "未通過 D1／僅供觀察"
-    assert r["d1"]["verdict"] == "blocked" and r["d1"]["reasons"] == ["DSR 0.94 < 0.95"]
+    assert r["d1"]["verdict"] == "blocked" and r["d1"]["reasons"] == ["DSR 0.941 < 0.95"]
     assert r["classification"] == ["open"]
     # 前向與歷史分開：equity 只有前向（起算日起），history 另有標示
     assert [p[0] for p in r["equity"]["base"]] == ["2026-03-05"]

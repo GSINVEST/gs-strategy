@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from pathlib import Path
 from typing import Optional
@@ -19,8 +20,10 @@ def _reason(check: dict) -> str:
     m = _THRESH.match(thr or "")
     if m and isinstance(value, (int, float)):
         label, op, bound = m.groups()
-        # 門檻「須大於」bound 而未達 → "DSR 0.94 < 0.95"；「須小於」bound 而未達 → "PBO 0.60 ≥ 0.5"
-        return f"{label} {value:.2f} {'<' if op == '>' else '≥'} {bound}"
+        # 門檻「須大於」bound 而未達 → "DSR 0.941 < 0.95"；「須小於」bound 而未達 → "PBO 0.600 ≥ 0.5"
+        # 向零截斷到三位而非四捨五入：0.9496 要顯示 0.949，不能變成「0.95 < 0.95」
+        shown = math.floor(value * 1000) / 1000
+        return f"{label} {shown:.3f} {'<' if op == '>' else '≥'} {bound}"
     if isinstance(value, (int, float)):
         return f"{name} {value:.4g}（門檻 {thr}）"
     return f"{name} 未達門檻（{thr}）"

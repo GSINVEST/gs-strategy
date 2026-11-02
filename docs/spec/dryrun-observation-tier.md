@@ -43,7 +43,7 @@ genesis-deck gateway 的 `strategylive.validate` 對欄位**逐一嚴格比對**
 |---|---|---|
 | `tier` | `"promoted"` | `"observing"` |
 | `label` | `null` | `"未通過 D1／僅供觀察"` |
-| `d1` | `null` | `{verdict, reasons[], pending[], screened_at, rules_version}`；`reasons` 例：`"DSR 0.94 < 0.95"`，`pending`＝尚未完成（unavailable／provisional）的檢查，不算失敗 |
+| `d1` | `null` | `{verdict, reasons[], pending[], screened_at, rules_version}`；`reasons` 例：`"DSR 0.941 < 0.95"（向零截斷到三位，不四捨五入）`，`pending`＝尚未完成（unavailable／provisional）的檢查，不算失敗 |
 | `history` | `null` | `null` 或 `{basis:"in_sample_backfill", label:"樣本內回補（非前向）", start, end, equity:{optimistic,base,pessimistic}}` |
 
 `equity` 永遠只是前向；歷史只在 `history`。
