@@ -121,6 +121,10 @@ DRYRUN_DOCKER_TESTS=1 pytest tests/test_dryrun_container.py          # 同上，
 - `push`（`push.py`）：以 `PUT` 加 `Authorization: Bearer` 推到 gateway。網址與金鑰存在 `~/.config/gs-dryrun/push_url`、`push_key`（權限 600；金鑰是 gateway 上帶 `strategy-live:push` scope 的專用 key，用 `keyctl.sh` 發，**不要貼到對話或 repo**）。任一檔不存在 → 只印警告、結束碼 0；被拒或網路錯誤 → 結束碼 2。輸出不含金鑰、網址與回應內容。
 - 已實跑（WSL 系統 python3.12）：產生快照、推送到本機假伺服器（Bearer 與內容正確）、未設定時略過。**未驗證**：真實 gateway 端點（屬 genesis-deck 的 P2，尚未存在）、`push_key` 的實際發放、cron 下的完整流程。
 
+## 觀察層
+
+D1 未通過的策略另有「觀察層」（前向紙上模擬、與 promoted 完全分離、不構成晉升），見 [`dryrun-observation-tier.md`](dryrun-observation-tier.md)。
+
 ## 排程
 
 ```bash

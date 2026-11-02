@@ -69,6 +69,10 @@ def _utc_now() -> str:
 
 
 class DryRunExecutor:
+    # 子類（ObservationExecutor）覆寫這三個：帳本 tier、啟動依據、持續資格。promoted 路徑行為不變。
+    TIER = "promoted"
+    REQUIRE_REGISTRY_FRAMEWORK = True        # 啟動時框架版本必須等於 registry 記錄的
+
     def __init__(self, *, ledger: DryLedger, runner: SimRunner,
                  registry: Path = REGISTRY, strategies_root: Optional[Path] = None,
                  selfcheck: Optional[Callable[[], None]] = None,
@@ -92,19 +96,38 @@ class DryRunExecutor:
     def _pause(self, run_id: int, reason: str) -> None:
         self.ledger.append_event(run_id, self.now(), "PAUSED", reason)
 
+    # --- 可覆寫的資格檢查（promoted 版）---------------------------------------
+    def _start_basis(self, strategy_id: str) -> dict:
+        """啟動依據：registry 最新記錄。回傳含 strategy_sha256／framework_version／data_snapshot 的 dict。"""
+        promo = latest(strategy_id, self.registry)
+        if promo is None or promo.get("event") != "promoted":
+            raise NotPromoted(f"{strategy_id}: registry 最新記錄不是 promoted，不能啟動 dry run")
+        return promo
+
+    def _still_eligible(self, strategy_id: str, sha: str) -> Optional[str]:
+        """持續資格。回 None＝仍合格；回字串＝不合格的暫停原因。"""
+        promo = latest(strategy_id, self.registry)
+        if promo is None or promo.get("event") != "promoted" or promo["strategy_sha256"] != sha:
+            return "NO_LONGER_PROMOTED"
+        return None
+
+    def _ineligible_error(self, strategy_id: str) -> Exception:
+        return NotPromoted(f"{strategy_id}: registry 最新記錄已不是此版本的 promoted，暫停")
+
+    def _run_extras(self, basis: dict) -> dict:
+        return {}
+
     # --- 啟動 -------------------------------------------------------------
     def start_run(self, strategy_id: str, *, start_date: str, capital_base: Optional[float],
                   benchmark: BenchmarkPackProvider) -> int:
         self.selfcheck()
         sdir = self._scope(strategy_id)
-        promo = latest(strategy_id, self.registry)
-        if promo is None or promo.get("event") != "promoted":
-            raise NotPromoted(f"{strategy_id}: registry 最新記錄不是 promoted，不能啟動 dry run")
+        promo = self._start_basis(strategy_id)
         sha = strategy_sha256(sdir)
         if sha != promo["strategy_sha256"]:
             raise FrozenHashMismatch(f"{strategy_id}: 目前內容與晉升時的雜湊不符，拒絕啟動")
         fw = self.runner.framework_version()
-        if fw != promo["framework_version"]:
+        if self.REQUIRE_REGISTRY_FRAMEWORK and fw != promo["framework_version"]:
             raise FrameworkMismatch(f"{strategy_id}: 框架版本 {fw!r} ≠ 晉升時 {promo['framework_version']!r}")
         if capital_base is None:
             capital_base = float(yaml.safe_load((sdir / "config.yaml").read_text(encoding="utf-8"))
@@ -118,12 +141,12 @@ class DryRunExecutor:
             promoted_data_snapshot=promo["data_snapshot"], start_date=start_date,
             capital_base=float(capital_base),
             benchmark_status="ATTACHED" if pack else "D2_UNAVAILABLE", benchmark_pack=pack,
-            ts=self.now())
+            ts=self.now(), tier=self.TIER, **self._run_extras(promo))
 
     def resume(self, strategy_id: str, *, by: str, note: str) -> None:
         if not by.strip():
             raise DryRunError("resume 需要具名的人")
-        run = self.ledger.find_run(strategy_id)
+        run = self.ledger.find_run(strategy_id, tier=self.TIER)
         if run is None:
             raise DryRunError(f"{strategy_id}: 沒有 dry run")
         mark = self.ledger.last_recorded_session(run["run_id"])
@@ -134,17 +157,17 @@ class DryRunExecutor:
     def run_day(self, strategy_id: str, session: str) -> DayOutcome:
         self.selfcheck()
         sdir = self._scope(strategy_id)
-        run = self.ledger.find_run(strategy_id)
+        run = self.ledger.find_run(strategy_id, tier=self.TIER)
         if run is None:
             raise DryRunError(f"{strategy_id}: 尚未啟動 dry run（先 start_run）")
         run_id, sha = run["run_id"], run["strategy_sha256"]
         if self.ledger.is_paused(run_id):
             raise Paused(f"{strategy_id}: 已暫停，須人工 resume")
 
-        promo = latest(strategy_id, self.registry)
-        if promo is None or promo.get("event") != "promoted" or promo["strategy_sha256"] != sha:
-            self._pause(run_id, "NO_LONGER_PROMOTED")
-            raise NotPromoted(f"{strategy_id}: registry 最新記錄已不是此版本的 promoted，暫停")
+        why = self._still_eligible(strategy_id, sha)
+        if why is not None:
+            self._pause(run_id, why)
+            raise self._ineligible_error(strategy_id)
         if strategy_sha256(sdir) != sha:
             self._pause(run_id, "FROZEN_HASH_MISMATCH")
             raise FrozenHashMismatch(f"{strategy_id}: 策略內容與凍結雜湊不符，拒跑並暫停")

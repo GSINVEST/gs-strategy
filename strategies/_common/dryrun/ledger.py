@@ -22,7 +22,9 @@ CREATE TABLE IF NOT EXISTS dry_runs (
   capital_base REAL,
   benchmark_status TEXT NOT NULL, benchmark_pack TEXT,
   created_ts TEXT NOT NULL,
-  UNIQUE (strategy_id, strategy_sha256)
+  tier TEXT NOT NULL DEFAULT 'promoted' CHECK (tier IN ('promoted','observing')),
+  d1_json TEXT,
+  UNIQUE (strategy_id, strategy_sha256, tier)
 );
 CREATE TABLE IF NOT EXISTS dry_daily (
   run_id INTEGER NOT NULL, session TEXT NOT NULL,
@@ -46,6 +48,15 @@ CREATE TABLE IF NOT EXISTS dry_fills (
   reason TEXT, flags TEXT NOT NULL DEFAULT '',
   data_snapshot TEXT NOT NULL, strategy_sha256 TEXT NOT NULL, ts TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS dry_history (
+  run_id INTEGER NOT NULL, session TEXT NOT NULL,
+  scenario TEXT NOT NULL CHECK (scenario IN ('optimistic','base','pessimistic')),
+  mode TEXT NOT NULL DEFAULT 'DRY' CHECK (mode = 'DRY'),
+  basis TEXT NOT NULL DEFAULT 'IN_SAMPLE_BACKFILL' CHECK (basis = 'IN_SAMPLE_BACKFILL'),
+  equity REAL NOT NULL,
+  cost_model_version TEXT, data_snapshot TEXT NOT NULL, ts TEXT NOT NULL,
+  PRIMARY KEY (run_id, session, scenario)
+);
 CREATE TABLE IF NOT EXISTS dry_events (
   event_id INTEGER PRIMARY KEY AUTOINCREMENT,
   run_id INTEGER NOT NULL,
@@ -53,7 +64,8 @@ CREATE TABLE IF NOT EXISTS dry_events (
   ts TEXT NOT NULL, kind TEXT NOT NULL, detail TEXT
 );
 """
-TABLES = ("dry_runs", "dry_daily", "dry_fills", "dry_events")
+TABLES = ("dry_runs", "dry_daily", "dry_fills", "dry_history", "dry_events")
+TIERS = ("promoted", "observing")
 SCENARIO_ORDER = ("optimistic", "base", "pessimistic")
 
 
@@ -73,35 +85,80 @@ class DryLedger:
         self._conn = sqlite3.connect(str(self.path))
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(SCHEMA + _triggers())
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """舊帳本（沒有 tier 欄）補欄位：既有的列一律是 promoted。舊的 UNIQUE(strategy_id, sha) 無法就地
+        改，所以舊帳本上同一版本不能同時有 promoted 與 observing 兩筆（start_run 會明確報錯）。"""
+        cols = {r[1] for r in self._conn.execute("PRAGMA table_info(dry_runs)")}
+        with self._conn:
+            if "tier" not in cols:
+                self._conn.execute("ALTER TABLE dry_runs ADD COLUMN tier TEXT NOT NULL DEFAULT 'promoted' "
+                                   "CHECK (tier IN ('promoted','observing'))")
+            if "d1_json" not in cols:
+                self._conn.execute("ALTER TABLE dry_runs ADD COLUMN d1_json TEXT")
 
     def close(self) -> None:
         self._conn.close()
 
     # --- runs -----------------------------------------------------------
-    def find_run(self, strategy_id: str, sha: Optional[str] = None):
+    def find_run(self, strategy_id: str, sha: Optional[str] = None, tier: str = "promoted"):
+        """預設只找 promoted：沒指定 tier 的既有呼叫端（DryRunExecutor）永遠看不到 observing 的列。"""
+        if tier not in TIERS:
+            raise ValueError(f"unknown tier {tier!r}")
         if sha is not None:
             return self._conn.execute(
-                "SELECT * FROM dry_runs WHERE strategy_id=? AND strategy_sha256=?",
-                (strategy_id, sha)).fetchone()
+                "SELECT * FROM dry_runs WHERE strategy_id=? AND strategy_sha256=? AND tier=?",
+                (strategy_id, sha, tier)).fetchone()
         return self._conn.execute(
-            "SELECT * FROM dry_runs WHERE strategy_id=? ORDER BY run_id DESC LIMIT 1",
-            (strategy_id,)).fetchone()
+            "SELECT * FROM dry_runs WHERE strategy_id=? AND tier=? ORDER BY run_id DESC LIMIT 1",
+            (strategy_id, tier)).fetchone()
 
     def start_run(self, *, strategy_id, lineage_id, branch, strategy_sha256, framework_version,
                   cost_model_version, cost_params: dict, promoted_data_snapshot, start_date,
-                  capital_base, benchmark_status, benchmark_pack, ts) -> int:
-        existing = self.find_run(strategy_id, strategy_sha256)
+                  capital_base, benchmark_status, benchmark_pack, ts,
+                  tier: str = "promoted", d1: Optional[dict] = None) -> int:
+        if tier not in TIERS:
+            raise ValueError(f"unknown tier {tier!r}")
+        existing = self.find_run(strategy_id, strategy_sha256, tier)
         if existing is not None:
             return existing["run_id"]
-        with self._conn:
-            cur = self._conn.execute(
-                "INSERT INTO dry_runs(strategy_id,lineage_id,branch,strategy_sha256,framework_version,"
-                "cost_model_version,cost_params_json,promoted_data_snapshot,start_date,capital_base,"
-                "benchmark_status,benchmark_pack,created_ts) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (strategy_id, lineage_id, branch, strategy_sha256, framework_version,
-                 cost_model_version, json.dumps(cost_params, sort_keys=True), promoted_data_snapshot,
-                 start_date, capital_base, benchmark_status, benchmark_pack, ts))
+        try:
+            with self._conn:
+                cur = self._conn.execute(
+                    "INSERT INTO dry_runs(strategy_id,lineage_id,branch,strategy_sha256,framework_version,"
+                    "cost_model_version,cost_params_json,promoted_data_snapshot,start_date,capital_base,"
+                    "benchmark_status,benchmark_pack,created_ts,tier,d1_json) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (strategy_id, lineage_id, branch, strategy_sha256, framework_version,
+                     cost_model_version, json.dumps(cost_params, sort_keys=True), promoted_data_snapshot,
+                     start_date, capital_base, benchmark_status, benchmark_pack, ts, tier,
+                     json.dumps(d1, ensure_ascii=False, sort_keys=True) if d1 is not None else None))
+        except sqlite3.IntegrityError as e:
+            raise sqlite3.IntegrityError(
+                f"{strategy_id}: 此版本在這份帳本已有另一個 tier 的 run（舊帳本的唯一鍵不含 tier）：{e}") from e
         return cur.lastrowid
+
+    # --- history（樣本內回補；與前向 dry_daily 分開存放，永不混用）-----------------
+    def has_history(self, run_id: int) -> bool:
+        return self._conn.execute("SELECT 1 FROM dry_history WHERE run_id=? LIMIT 1",
+                                  (run_id,)).fetchone() is not None
+
+    def append_history(self, run_id: int, series: dict, *, cost_model_version: str,
+                       data_snapshot: str, ts: str) -> int:
+        """series: {scenario: [(session, equity), ...]}。同一個 run 只能回補一次（單向追加）。"""
+        if self.has_history(run_id):
+            raise ValueError(f"run {run_id} 已有歷史回補；帳本單向追加，不能重寫")
+        n = 0
+        with self._conn:
+            for sc in SCENARIO_ORDER:
+                for session, equity in series[sc]:
+                    self._conn.execute(
+                        "INSERT INTO dry_history(run_id,session,scenario,equity,cost_model_version,"
+                        "data_snapshot,ts) VALUES(?,?,?,?,?,?,?)",
+                        (run_id, session, sc, float(equity), cost_model_version, data_snapshot, ts))
+                    n += 1
+        return n
 
     # --- events / pause -------------------------------------------------------
     def append_event(self, run_id: int, ts: str, kind: str, detail: str) -> None:

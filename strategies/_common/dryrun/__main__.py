@@ -4,6 +4,9 @@
   python -m strategies._common.dryrun run    --strategy-id vgrsi_tx [--session 2026-11-02]
   python -m strategies._common.dryrun resume --strategy-id vgrsi_tx --by <人> --note <原因>
 
+觀察層（D1 未過的策略，前向紙上模擬；不是晉升，見 docs/spec/dryrun-observation-tier.md）：
+  observe-start / observe-run / observe-resume 同上；observe-backfill --hist-start YYYY-MM-DD
+
 只跑、只寫 DRY 帳本；沒有任何下單或連券商的指令。需 TEJAPI_KEY 與 tquant_future bundle。
 """
 from __future__ import annotations
@@ -33,12 +36,14 @@ def _default_session(runner) -> str:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="dryrun")
-    ap.add_argument("cmd", choices=["start", "run", "resume", "framework-version"])
+    ap.add_argument("cmd", choices=["start", "run", "resume", "framework-version",
+                                "observe-start", "observe-run", "observe-resume", "observe-backfill"])
     ap.add_argument("--strategy-id")
     ap.add_argument("--ledger", type=Path, default=Path(os.environ.get("DRYRUN_LEDGER", DEFAULT_DIR / "dry_ledger.sqlite")))
     ap.add_argument("--start-date")
     ap.add_argument("--capital", type=float)
     ap.add_argument("--session")
+    ap.add_argument("--hist-start")
     ap.add_argument("--by")
     ap.add_argument("--note", default="")
     a = ap.parse_args(argv)
@@ -56,13 +61,23 @@ def main(argv=None) -> int:
             return 0
         if not a.strategy_id:
             ap.error("需要 --strategy-id")
-        ex = DryRunExecutor(ledger=DryLedger(a.ledger), runner=runner)
-        if a.cmd == "start":
+        observing = a.cmd.startswith("observe-")
+        if observing:
+            from .observe import ObservationExecutor
+            ex = ObservationExecutor(ledger=DryLedger(a.ledger), runner=runner)
+        else:
+            ex = DryRunExecutor(ledger=DryLedger(a.ledger), runner=runner)
+        cmd = a.cmd[len("observe-"):] if observing else a.cmd
+        if cmd == "backfill":
+            if not a.hist_start:
+                ap.error("observe-backfill 需要 --hist-start")
+            print("history rows", ex.backfill(a.strategy_id, hist_start=a.hist_start))
+        elif cmd == "start":
             if not a.start_date:
                 ap.error("start 需要 --start-date")
             print("run_id", ex.start_run(a.strategy_id, start_date=a.start_date,
                                          capital_base=a.capital, benchmark=NoBenchmarkPack()))
-        elif a.cmd == "run":
+        elif cmd == "run":
             session = a.session or _default_session(runner)
             print(ex.run_day(a.strategy_id, session))
         else:
