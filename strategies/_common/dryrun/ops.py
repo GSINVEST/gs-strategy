@@ -134,7 +134,10 @@ def backup_ledger(ledger: Path, dest: Path, *, keep: int = 14, now: dt.datetime 
             src.backup(dst)
             if dst.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 raise RuntimeError("備份檔 integrity_check 未通過")
-            for t in ("dry_runs", "dry_daily", "dry_fills", "dry_events"):
+            have = {r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            for t in ("dry_runs", "dry_daily", "dry_fills", "dry_history", "dry_events"):
+                if t not in have:       # 舊帳本沒有 dry_history
+                    continue
                 a = src.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
                 b = dst.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
                 if a != b:

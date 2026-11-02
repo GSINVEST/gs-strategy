@@ -17,6 +17,13 @@ for s in $STRATEGIES; do
   # 尚未啟動（沒有 promoted 記錄）的策略會失敗，記錄後繼續下一支
   docker compose run --rm dryrun run --strategy-id "$s" || { echo "FAILED: $s"; rc=1; }
 done
+# 觀察層（預設關閉，須 DRYRUN_OBSERVE=1）：D1 未過的策略前向紙上模擬，與上面的 promoted 完全分離。
+# 尚未 observe-start 的策略會失敗並記錄，不影響其他策略，也不影響 promoted 的結束碼語意以外的任何事。
+if [ "${DRYRUN_OBSERVE:-0}" = "1" ]; then
+  for s in $STRATEGIES; do
+    docker compose run --rm dryrun observe-run --strategy-id "$s" || { echo "OBSERVE FAILED: $s"; rc=1; }
+  done
+fi
 else
   echo "FAILED: egress-proxy 起不來"; rc=1
 fi
@@ -37,7 +44,10 @@ hrc=$?
 
 # 快照（給 gateway 的面板用）：產生後推送；未設定 push_url／push_key 時只警告。推送失敗併入結束碼
 SNAP="$(mktemp)"; trap 'rm -f "$SNAP"' EXIT
-if python3 -m strategies._common.dryrun.snapshot --ledger "$LEDGER" --strategies-dir "$DRYRUN_REPO/strategies" --out "$SNAP"; then
+# --with-observing 輸出 /2 快照，gateway 須先接受 /2（見 docs/spec/dryrun-observation-tier.md），所以同樣預設關閉
+SNAP_ARGS=()
+[ "${DRYRUN_OBSERVE:-0}" = "1" ] && SNAP_ARGS=(--with-observing --registry "$DRYRUN_REPO/log/promotions.jsonl")
+if python3 -m strategies._common.dryrun.snapshot --ledger "$LEDGER" --strategies-dir "$DRYRUN_REPO/strategies" --out "$SNAP" ${SNAP_ARGS[@]+"${SNAP_ARGS[@]}"}; then
   python3 -m strategies._common.dryrun.push --file "$SNAP"
   prc=$?
 else

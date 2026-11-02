@@ -18,6 +18,16 @@ LIFECYCLE_TRANSITIONS = frozenset({
     ("paused", "retired"),
 })
 
+# 觀察層（observation tier）：與上面的 promoted 生命週期完全分離的另一組狀態。
+# 刻意沒有任何通往 promoted／dryrun_active／live 的轉移——觀察不是晉升的前置步驟。
+OBSERVATION_STATES = ("observing", "paused", "retired")
+OBSERVATION_TRANSITIONS = frozenset({
+    ("observing", "paused"),
+    ("paused", "observing"),
+    ("observing", "retired"),
+    ("paused", "retired"),
+})
+
 
 @dataclass(frozen=True)
 class SimulatedOrder:

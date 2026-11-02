@@ -1,0 +1,155 @@
+{
+ "schema": "strategy-live-snapshot/2",
+ "generated_at": "2026-11-02T08:00:00+00:00",
+ "runs": [
+  {
+   "strategy_id": "vgrsi_tx",
+   "lineage_id": "L",
+   "branch": "b",
+   "sha8": "ssssssss",
+   "classification": [
+    "open"
+   ],
+   "start_date": "2026-10-26",
+   "status": "active",
+   "benchmark_status": "D2_UNAVAILABLE",
+   "last_session": "2026-10-29",
+   "trailing_missing": 0,
+   "days": 2,
+   "equity": {
+    "optimistic": [
+     [
+      "2026-10-28",
+      5000000.0
+     ],
+     [
+      "2026-10-29",
+      5000000.0
+     ]
+    ],
+    "base": [
+     [
+      "2026-10-28",
+      5000000.0
+     ],
+     [
+      "2026-10-29",
+      5000000.0
+     ]
+    ],
+    "pessimistic": [
+     [
+      "2026-10-28",
+      5000000.0
+     ],
+     [
+      "2026-10-29",
+      5000000.0
+     ]
+    ]
+   },
+   "cost_cum": {
+    "spread": 0,
+    "impact": 0,
+    "commission": 0
+   },
+   "tier": "promoted",
+   "label": null,
+   "d1": null,
+   "history": null
+  },
+  {
+   "strategy_id": "tsmom_tx_mtx",
+   "lineage_id": "L",
+   "branch": "b",
+   "sha8": "oooooooo",
+   "classification": [
+    "open"
+   ],
+   "start_date": "2026-10-26",
+   "status": "active",
+   "benchmark_status": "D2_UNAVAILABLE",
+   "last_session": "2026-10-29",
+   "trailing_missing": 0,
+   "days": 1,
+   "equity": {
+    "optimistic": [
+     [
+      "2026-10-29",
+      5000000.0
+     ]
+    ],
+    "base": [
+     [
+      "2026-10-29",
+      5000000.0
+     ]
+    ],
+    "pessimistic": [
+     [
+      "2026-10-29",
+      5000000.0
+     ]
+    ]
+   },
+   "cost_cum": {
+    "spread": 0,
+    "impact": 0,
+    "commission": 0
+   },
+   "tier": "observing",
+   "label": "未通過 D1／僅供觀察",
+   "d1": {
+    "pending": [
+     "pbo",
+     "spa"
+    ],
+    "reasons": [
+     "DSR 0.92 < 0.95"
+    ],
+    "rules_version": "1",
+    "screened_at": "2026-10-30T08:04:36+00:00",
+    "verdict": "blocked"
+   },
+   "history": {
+    "basis": "in_sample_backfill",
+    "label": "樣本內回補（非前向）",
+    "start": "2026-10-22",
+    "end": "2026-10-23",
+    "equity": {
+     "optimistic": [
+      [
+       "2026-10-22",
+       5000000.0
+      ],
+      [
+       "2026-10-23",
+       5010000.0
+      ]
+     ],
+     "base": [
+      [
+       "2026-10-22",
+       5000000.0
+      ],
+      [
+       "2026-10-23",
+       5010000.0
+      ]
+     ],
+     "pessimistic": [
+      [
+       "2026-10-22",
+       5000000.0
+      ],
+      [
+       "2026-10-23",
+       5010000.0
+      ]
+     ]
+    }
+   }
+  }
+ ],
+ "alerts": []
+}
