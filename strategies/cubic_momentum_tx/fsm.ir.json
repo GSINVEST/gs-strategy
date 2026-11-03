@@ -1,0 +1,130 @@
+{
+  "ir_version": "strategy-fsm-ir/0.1.1",
+  "id": "cubic_momentum_tx",
+  "title_zh": "三次動能（趨勢＋崩盤翻轉）大台期貨",
+  "provenance": {
+    "method": "hand_from_code",
+    "extracted_on": "2026-11-02",
+    "extracted_by": "Claude（手抽，未經人審；定位為基準而非已簽核規格）",
+    "sources": [
+      { "repo": "gs-strategy", "repo_commit": "6ae4209f656c852917b5664676f87cf3a0835e03", "path": "strategies/cubic_momentum_tx/strategy.py", "sha256_lf": "b7a1b2f106d1cbc9a6cf1de34bb10be0a605b553b3f11763b165e4fd71ce4d87" },
+      { "repo": "gs-strategy", "repo_commit": "6ae4209f656c852917b5664676f87cf3a0835e03", "path": "strategies/cubic_momentum_tx/config.yaml", "sha256_lf": "dae602a44398c11d923bc9128021b0b192b14f8230968c522386c1136c29bdf2" },
+      { "repo": "gs-strategy", "repo_commit": "6ae4209f656c852917b5664676f87cf3a0835e03", "path": "strategies/_common/futures_setup.py", "sha256_lf": "de6216950a6836870d1b5d6cdadb41c9745d700a238d2bd0e5395b7e578e292c" }
+    ]
+  },
+  "time": {
+    "unit": "bar", "bar": "1d", "decision_point": "market_close",
+    "calendar": "TEJ_morning_future（runner 預設，config.yaml 未指定）",
+    "fill_timing": { "todo": "TODO(人)", "reason": "成交發生在同一根還是下一根 bar 取決於 zipline-tej 日頻成交模型；本次未實測，不猜。" }
+  },
+  "instruments": [
+    { "id": "TX", "multiplier": 200, "multiplier_unit": "NTD/index_point", "multiplier_source": "_common/futures_setup.py 註解『TX point value = 200 NTD』；本策略碼沒有乘數", "tick_size": { "todo": "TODO(人)", "reason": "策略碼與設定檔都沒有最小跳動點；需查交易所規格。" } }
+  ],
+  "data": [
+    { "name": "close", "source": "bundle tquant_future，continuous_future('TX', offset=0, roll='calendar', adjustment='add')", "field": "close", "instrument": "TX", "frequency": "1d", "adjustment": "add（加法調整，連續合約價）", "available_at": "當根 bar 收盤後（data.history 含當日收盤）", "history_bars": 65 }
+  ],
+  "constants": [
+    { "name": "lookback", "value": 20, "unit": "bars", "source": "config.yaml:params.lookback" },
+    { "name": "sigma_window", "value": 60, "unit": "bars", "source": "config.yaml:params.sigma_window" },
+    { "name": "z_crit", "value": 1.5, "unit": "z", "source": "config.yaml:params.z_crit" },
+    { "name": "max_contracts", "value": 2, "unit": "contracts", "source": "config.yaml:params.max_contracts" },
+    { "name": "allow_short", "value": true, "source": "config.yaml:params.allow_short" },
+    { "name": "days_before_close", "value": 10, "unit": "days", "source": "config.yaml:params.days_before_close" },
+    { "name": "capital_base", "value": 5000000, "unit": "NTD", "source": "config.yaml:capital_base" }
+  ],
+  "variables": [
+    { "name": "position", "type": "int", "unit": "contracts", "origin": "strategy_code", "init": 0, "range": [-2, 2], "bound_reason": "|position| <= max_contracts（strategy.py 最後一行 clamp）", "source": "strategy.py:_evaluate" },
+    { "name": "price_pts", "type": "price_points", "unit": "index_points", "origin": "model_only", "init": 0, "range": [-3, 3], "bound_reason": "只追蹤自進場以來價差；TLC 有限模型的界，非市場假設", "source": "model_only" },
+    { "name": "entry_pts", "type": "price_points", "unit": "index_points", "origin": "model_only", "init": 0, "range": [-3, 3], "bound_reason": "同上", "source": "model_only" }
+  ],
+  "signals": [
+    {
+      "id": "target_size",
+      "label_zh": "目標口數",
+      "kind": "opaque",
+      "impl_ref": { "file": "strategies/cubic_momentum_tx/strategy.py", "function": "_cubic_signal（經 round(score*max_contracts) 並 clamp）" },
+      "inputs": ["close"],
+      "domain": { "kind": "int_range", "lo": -2, "hi": 2, "extra_values": ["NO_SIGNAL"] },
+      "zone_rule_zh": "NO_SIGNAL：收盤價不足、sigma<=0 或非有限值、沒有前月合約，這天不動作。否則為 round(score × 2) 夾在 -2..+2；allow_short=false 時下界改 0（此版設定為 true）。",
+      "tlc_abstraction": "nondeterministic"
+    }
+  ],
+  "states": [
+    { "id": "FLAT", "label_zh": "空手", "predicate": "position == 0" },
+    { "id": "LONG", "label_zh": "持有多單", "description_zh": "1 或 2 口", "predicate": "position > 0" },
+    { "id": "SHORT", "label_zh": "持有空單", "description_zh": "1 或 2 口（動能過熱翻轉或趨勢向下）", "predicate": "position < 0" }
+  ],
+  "initial_state": "FLAT",
+  "events": [
+    { "id": "BAR_CLOSE", "label_zh": "收盤決策", "kind": "scheduled", "source": "strategy.py:initialize schedule_function(_evaluate, every_day, market_close)" },
+    { "id": "ROLL_DUE", "label_zh": "換月檢查", "kind": "scheduled", "source": "_common/futures_setup.py:make_roll_futures_handler，每日收盤" },
+    { "id": "GAP", "label_zh": "跳空", "kind": "adverse", "source": "壓力場景，非策略程式" },
+    { "id": "LIQUIDITY_GONE", "label_zh": "流動性歸零（這根下的單成交不了）", "kind": "adverse", "source": "壓力場景，非策略程式" }
+  ],
+  "transitions": [
+    { "id": "T_FLAT_TO_LONG", "label_zh": "空手 → 做多", "from": ["FLAT"], "on": "BAR_CLOSE", "guard": "target_size != NO_SIGNAL and target_size > 0", "to": "LONG",
+      "effects": [{ "var": "position", "expr": "target_size" }, { "var": "entry_pts", "expr": "price_pts" }],
+      "orders": [{ "instrument": "TX", "kind": "target_position", "target": "target_size", "fills": 1 }], "code_ref": "strategy.py:_evaluate  target_size != qty → order_target" },
+    { "id": "T_FLAT_TO_SHORT", "label_zh": "空手 → 做空", "from": ["FLAT"], "on": "BAR_CLOSE", "guard": "target_size != NO_SIGNAL and target_size < 0", "to": "SHORT",
+      "effects": [{ "var": "position", "expr": "target_size" }, { "var": "entry_pts", "expr": "price_pts" }],
+      "orders": [{ "instrument": "TX", "kind": "target_position", "target": "target_size", "fills": 1 }], "code_ref": "同上" },
+    { "id": "T_LONG_TO_FLAT", "label_zh": "多單 → 平倉", "from": ["LONG"], "on": "BAR_CLOSE", "guard": "target_size != NO_SIGNAL and target_size == 0", "to": "FLAT",
+      "effects": [{ "var": "position", "expr": "0" }],
+      "orders": [{ "instrument": "TX", "kind": "target_position", "target": "0", "fills": 1 }], "code_ref": "同上" },
+    { "id": "T_LONG_TO_SHORT", "label_zh": "多單 → 一步翻空（動能過熱翻轉）", "from": ["LONG"], "on": "BAR_CLOSE", "guard": "target_size != NO_SIGNAL and target_size < 0", "to": "SHORT",
+      "effects": [{ "var": "position", "expr": "target_size" }, { "var": "entry_pts", "expr": "price_pts" }],
+      "orders": [{ "instrument": "TX", "kind": "target_position", "target": "target_size", "fills": 1 }], "code_ref": "同上；單張 order_target 由 +N 直接到 -M" },
+    { "id": "T_LONG_RESIZE", "label_zh": "多單 → 調整口數", "from": ["LONG"], "on": "BAR_CLOSE", "guard": "target_size != NO_SIGNAL and target_size > 0 and target_size != position", "to": "LONG",
+      "effects": [{ "var": "position", "expr": "target_size" }],
+      "orders": [{ "instrument": "TX", "kind": "target_position", "target": "target_size", "fills": 1 }], "code_ref": "同上" },
+    { "id": "T_SHORT_TO_FLAT", "label_zh": "空單 → 平倉", "from": ["SHORT"], "on": "BAR_CLOSE", "guard": "target_size != NO_SIGNAL and target_size == 0", "to": "FLAT",
+      "effects": [{ "var": "position", "expr": "0" }],
+      "orders": [{ "instrument": "TX", "kind": "target_position", "target": "0", "fills": 1 }], "code_ref": "同上" },
+    { "id": "T_SHORT_TO_LONG", "label_zh": "空單 → 一步翻多", "from": ["SHORT"], "on": "BAR_CLOSE", "guard": "target_size != NO_SIGNAL and target_size > 0", "to": "LONG",
+      "effects": [{ "var": "position", "expr": "target_size" }, { "var": "entry_pts", "expr": "price_pts" }],
+      "orders": [{ "instrument": "TX", "kind": "target_position", "target": "target_size", "fills": 1 }], "code_ref": "同上" },
+    { "id": "T_SHORT_RESIZE", "label_zh": "空單 → 調整口數", "from": ["SHORT"], "on": "BAR_CLOSE", "guard": "target_size != NO_SIGNAL and target_size < 0 and target_size != position", "to": "SHORT",
+      "effects": [{ "var": "position", "expr": "target_size" }],
+      "orders": [{ "instrument": "TX", "kind": "target_position", "target": "target_size", "fills": 1 }], "code_ref": "同上" },
+    { "id": "T_ROLL_LONG", "label_zh": "多單接近到期：平舊月、開新月（口數不變）", "from": ["LONG"], "on": "ROLL_DUE", "guard": "true", "to": "LONG",
+      "effects": [], "orders": [{ "instrument": "TX", "kind": "close_and_reopen_on_front", "target": "position", "fills": 2 }],
+      "code_ref": "_common/futures_setup.py:roll_futures" },
+    { "id": "T_ROLL_SHORT", "label_zh": "空單接近到期：平舊月、開新月（口數不變）", "from": ["SHORT"], "on": "ROLL_DUE", "guard": "true", "to": "SHORT",
+      "effects": [], "orders": [{ "instrument": "TX", "kind": "close_and_reopen_on_front", "target": "position", "fills": 2 }],
+      "code_ref": "_common/futures_setup.py:roll_futures" }
+  ],
+  "costs": {
+    "commission": { "model": "per_contract_per_fill", "per_instrument": { "TX": 200 }, "unit": "NTD/contract/fill", "source": "config.yaml:params.per_contract_cost.TX → PerContract(cost=…, exchange_fee=0)" },
+    "slippage": {
+      "model": "fixed_points", "spread_points": 6.0,
+      "adverse_points_per_fill": { "todo": "TODO(人)", "reason": "FixedSlippage(spread=6.0) 是整個價差還是每筆吃一半？以 zipline-tej 實際原始碼為準，本次未查。" },
+      "unit": "index_points", "source": "config.yaml:params.spread_points → FixedSlippage(spread=…)"
+    },
+    "not_modeled": ["期貨交易稅", "保證金占用與資金成本", "換月價差", "交易所／期貨商其他費用（exchange_fee 設為 0）"]
+  },
+  "invariants": [
+    { "id": "INV_POS_BOUND", "label_zh": "部位絕對值不超過 max_contracts", "expr": "abs(position) <= max_contracts", "origin": "code_derived", "enforced_in_code": true, "status": "confirmed", "tlc_profile": "core", "code_ref": "strategy.py:_evaluate  target_size = max(-N, min(N, target_size))" },
+    { "id": "INV_STATE_CONSISTENT", "label_zh": "狀態名稱與實際部位一致", "expr": "state_predicate_holds", "origin": "code_derived", "enforced_in_code": "unknown", "status": "confirmed", "tlc_profile": "core", "vacuity_note": "IR 自身一致性檢查，不是策略性質。" },
+    { "id": "INV_NO_OPPOSITE_POSITION", "label_zh": "同商品不會同時持有反向部位", "expr": "position 為單一帶號淨部位", "origin": "trader_stated", "enforced_in_code": true, "status": "confirmed", "tlc_profile": "core", "vacuity_note": "淨部位表示法下恆成立，TLC 通過不帶資訊量。" },
+    { "id": "INV_MAX_TRADE_LOSS", "label_zh": "單筆交易（含未實現）虧損不超過總資金 2%", "expr": "(position * (entry_pts - price_pts) * TX_multiplier + trade_cost <= 0.02 * capital_base) and (last_loss <= 0.02 * capital_base)", "origin": "template_proposed", "enforced_in_code": false, "status": "proposed_needs_human", "tlc_profile": "stress", "vacuity_note": "策略程式沒有停損；2% 是範本建議值，需交易員確認。position 帶號：多單價格下跌、空單價格上漲時 position × (entry_pts − price_pts) 都為正（虧損）。口數調整（RESIZE）時以新口數重算，是記帳慣例，非實際損益。" }
+  ],
+  "stress": [
+    { "id": "STRESS_GAP", "label_zh": "開盤跳空", "kind": "gap", "tlc_encoding": "nondeterministic_action", "params": { "gap_points": { "todo": "TODO(人)", "reason": "最大可接受跳空點數由人決定。" } }, "status": "template_default" },
+    { "id": "STRESS_CONSECUTIVE_ADVERSE", "label_zh": "連續逆向走勢", "kind": "consecutive_adverse", "tlc_encoding": "nondeterministic_action", "params": { "max_consecutive_bars": { "todo": "TODO(人)", "reason": "連續幾根由人決定。" } }, "status": "template_default", "note": "此策略沒有停損，退化為連續逆向、無停損觸發。" },
+    { "id": "STRESS_LIQUIDITY_ZERO", "label_zh": "流動性歸零", "kind": "liquidity_zero", "tlc_encoding": "nondeterministic_action", "params": { "max_consecutive_bars": { "todo": "TODO(人)", "reason": "持續幾根由人決定。" } }, "status": "template_default" }
+  ],
+  "open_findings": [
+    "docstring 寫『short when z > z_crit』，但 _cubic_signal 的符號翻轉點是 z = √3·z_crit（≈2.60），z_crit 只是 f 的峰值位置。IR 依程式碼（signal 值域）抽取，不依 docstring；差異待策略作者確認。",
+    "z 的分母含 sqrt(lookback)，但 sigma 取自 sigma_window 日的日價差標準差；與 docstring 的描述一致性未驗證。",
+    "換月與收盤決策排在同一收盤時點，未成交的換月單與 _evaluate 的交互未實測（同 vgrsi_tx）。"
+  ],
+  "out_of_scope": [
+    "三次動能訊號有沒有預測力、崩盤翻轉是否真實存在",
+    "lookback、sigma_window、z_crit、max_contracts 是不是好參數（參數優化／敏感度）",
+    "DSR、PBO、CPCV、成本壓力下的統計有效性（屬 D1 晉升閘門）",
+    "回測績效數字、夏普值、樣本外表現",
+    "盤中（tick 內）行為、委託簿、部分成交",
+    "保證金追繳、強制平倉、券商與交易所異常",
+    "z 與 score 的數值計算是否正確（訊號為不透明函式）"
+  ]
+}

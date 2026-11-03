@@ -1,0 +1,116 @@
+{
+  "ir_version": "strategy-fsm-ir/0.1.1",
+  "id": "vgrsi_tx",
+  "title_zh": "VGRSI 大台期貨（預設設定：只做多）",
+  "provenance": {
+    "method": "hand_from_code",
+    "extracted_on": "2026-11-02",
+    "extracted_by": "Claude（手抽，未經人審；定位為基準而非已簽核規格）",
+    "sources": [
+      { "repo": "gs-strategy", "repo_commit": "6ae4209f656c852917b5664676f87cf3a0835e03", "path": "strategies/vgrsi_tx/strategy.py", "sha256_lf": "5e064b2b05ea329a2bb166d8de5febf2f344f8b9827dd0346ddec6d50306b180" },
+      { "repo": "gs-strategy", "repo_commit": "6ae4209f656c852917b5664676f87cf3a0835e03", "path": "strategies/vgrsi_tx/config.yaml", "sha256_lf": "4eb9e0960e1ee93a38d37512a5b59fabc8599efe157f16166c0bae9f65be4279" },
+      { "repo": "gs-strategy", "repo_commit": "6ae4209f656c852917b5664676f87cf3a0835e03", "path": "strategies/_common/futures_setup.py", "sha256_lf": "de6216950a6836870d1b5d6cdadb41c9745d700a238d2bd0e5395b7e578e292c" }
+    ]
+  },
+  "time": {
+    "unit": "bar",
+    "bar": "1d",
+    "decision_point": "market_close",
+    "calendar": "TEJ_morning_future（runner 預設，config.yaml 未指定）",
+    "fill_timing": { "todo": "TODO(人)", "reason": "策略在 market_close 下單，但成交發生在同一根還是下一根 bar，取決於 zipline-tej 日頻成交模型；本次未實測，不猜。" }
+  },
+  "instruments": [
+    { "id": "TX", "multiplier": 200, "multiplier_unit": "NTD/index_point", "multiplier_source": "_common/futures_setup.py 註解『TX point value = 200 NTD』；vgrsi_tx/strategy.py 本身沒有乘數", "tick_size": { "todo": "TODO(人)", "reason": "策略碼與設定檔都沒有最小跳動點；需查交易所規格。" } }
+  ],
+  "data": [
+    { "name": "close", "source": "bundle tquant_future，continuous_future('TX', offset=0, roll='calendar', adjustment='add')", "field": "close", "instrument": "TX", "frequency": "1d", "adjustment": "add（加法調整，連續合約價）", "available_at": "當根 bar 收盤後（data.history 含當日收盤）", "history_bars": 35 }
+  ],
+  "constants": [
+    { "name": "window", "value": 30, "unit": "bars", "source": "config.yaml:params.window" },
+    { "name": "upper_threshold", "value": 70.0, "unit": "vgrsi_points", "source": "config.yaml:params.upper_threshold" },
+    { "name": "lower_threshold", "value": 30.0, "unit": "vgrsi_points", "source": "config.yaml:params.lower_threshold" },
+    { "name": "allow_short", "value": false, "source": "config.yaml:params.allow_short" },
+    { "name": "position_contracts", "value": 1, "unit": "contracts", "source": "config.yaml:params.position_contracts" },
+    { "name": "days_before_close", "value": 10, "unit": "days", "source": "config.yaml:params.days_before_close" },
+    { "name": "capital_base", "value": 5000000, "unit": "NTD", "source": "config.yaml:capital_base" }
+  ],
+  "variables": [
+    { "name": "position", "type": "int", "unit": "contracts", "origin": "strategy_code", "init": 0, "range": [0, 1], "bound_reason": "allow_short=false ⇒ 下界 0；上界 = position_contracts", "source": "strategy.py:_evaluate（qty / order_target）" },
+    { "name": "price_pts", "type": "price_points", "unit": "index_points", "origin": "model_only", "init": 0, "range": [-3, 3], "bound_reason": "只追蹤『自進場以來的價差』，不是絕對價；TLC 有限模型的界，非市場假設", "source": "model_only：為了表達單筆虧損不變量" },
+    { "name": "entry_pts", "type": "price_points", "unit": "index_points", "origin": "model_only", "init": 0, "range": [-3, 3], "bound_reason": "同上", "source": "model_only" }
+  ],
+  "signals": [
+    {
+      "id": "vgrsi_zone",
+      "label_zh": "VGRSI 區間",
+      "kind": "opaque",
+      "impl_ref": { "file": "strategies/vgrsi_tx/strategy.py", "function": "vgrsi_value" },
+      "inputs": ["close"],
+      "domain": { "kind": "enum", "values": ["NO_SIGNAL", "LOW", "MID", "HIGH"] },
+      "zone_rule_zh": "NO_SIGNAL：收盤價不足 window 根、或沒有前月合約，這天不動作。LOW：vgrsi < lower_threshold（嚴格小於）。HIGH：vgrsi > upper_threshold（嚴格大於）。MID：其餘（含恰等於 30 或 70）。",
+      "tlc_abstraction": "nondeterministic"
+    }
+  ],
+  "states": [
+    { "id": "FLAT", "label_zh": "空手", "description_zh": "沒有大台部位", "predicate": "position == 0" },
+    { "id": "LONG", "label_zh": "持有多單", "description_zh": "持有 position_contracts 口大台多單", "predicate": "position > 0" },
+    { "id": "SHORT", "label_zh": "持有空單", "description_zh": "此版設定不可能出現", "predicate": "position < 0", "unreachable_by_config": "allow_short=false：訊號為 HIGH 時只平倉不反手" }
+  ],
+  "initial_state": "FLAT",
+  "events": [
+    { "id": "BAR_CLOSE", "label_zh": "收盤決策", "kind": "scheduled", "source": "strategy.py:initialize schedule_function(_evaluate, every_day, market_close)" },
+    { "id": "ROLL_DUE", "label_zh": "換月檢查", "kind": "scheduled", "source": "_common/futures_setup.py:make_roll_futures_handler，每日收盤" },
+    { "id": "GAP", "label_zh": "跳空", "kind": "adverse", "source": "壓力場景，非策略程式" },
+    { "id": "LIQUIDITY_GONE", "label_zh": "流動性歸零（這根下的單成交不了）", "kind": "adverse", "source": "壓力場景，非策略程式" }
+  ],
+  "transitions": [
+    { "id": "T_ENTER_LONG", "label_zh": "跌到超賣區：進場做多", "from": ["FLAT"], "on": "BAR_CLOSE", "guard": "vgrsi_zone == LOW", "to": "LONG",
+      "effects": [{ "var": "position", "expr": "position_contracts" }, { "var": "entry_pts", "expr": "price_pts" }],
+      "orders": [{ "instrument": "TX", "kind": "target_position", "target": "position_contracts", "fills": 1 }],
+      "code_ref": "strategy.py:_evaluate  rsi < lower → target_qty=+position_contracts" },
+    { "id": "T_EXIT_LONG", "label_zh": "漲到超買區：平倉（不反手）", "from": ["LONG"], "on": "BAR_CLOSE", "guard": "vgrsi_zone == HIGH", "to": "FLAT",
+      "effects": [{ "var": "position", "expr": "0" }],
+      "orders": [{ "instrument": "TX", "kind": "target_position", "target": "0", "fills": 1 }],
+      "code_ref": "strategy.py:_evaluate  rsi > upper → target_qty = -N if allow_short else 0" },
+    { "id": "T_ROLL", "label_zh": "接近到期：平舊月、開新月（方向口數不變）", "from": ["LONG"], "on": "ROLL_DUE", "guard": "true", "to": "LONG",
+      "effects": [],
+      "orders": [{ "instrument": "TX", "kind": "close_and_reopen_on_front", "target": "position", "fills": 2 }],
+      "code_ref": "_common/futures_setup.py:roll_futures（days_left <= days_before_close 且前月合約已換）" }
+  ],
+  "costs": {
+    "commission": { "model": "per_contract_per_fill", "per_instrument": { "TX": 200 }, "unit": "NTD/contract/fill", "source": "config.yaml:params.per_contract_cost.TX → PerContract(cost=…, exchange_fee=0)" },
+    "slippage": {
+      "model": "fixed_points",
+      "spread_points": 6.0,
+      "adverse_points_per_fill": { "todo": "TODO(人)", "reason": "zipline FixedSlippage(spread=6.0) 是整個價差還是每筆吃一半（spread/2）？以 zipline-tej 實際版本的原始碼為準，本次未查。" },
+      "unit": "index_points",
+      "source": "config.yaml:params.spread_points → FixedSlippage(spread=…)"
+    },
+    "not_modeled": ["期貨交易稅", "保證金占用與資金成本", "換月價差（calendar roll 的跨月價差損益）", "交易所／期貨商的其他費用（exchange_fee 設為 0）"]
+  },
+  "invariants": [
+    { "id": "INV_POS_BOUND", "label_zh": "部位絕對值不超過設定口數", "expr": "abs(position) <= position_contracts", "origin": "code_derived", "enforced_in_code": true, "status": "confirmed", "tlc_profile": "core", "code_ref": "strategy.py:_evaluate 只會對 front 下單到 {+position_contracts, 0}" },
+    { "id": "INV_NO_SHORT_WHEN_DISABLED", "label_zh": "禁止放空時不會出現空單", "expr": "allow_short == false => position >= 0", "origin": "code_derived", "enforced_in_code": true, "status": "confirmed", "tlc_profile": "core", "code_ref": "strategy.py:_evaluate" },
+    { "id": "INV_STATE_CONSISTENT", "label_zh": "狀態名稱與實際部位一致", "expr": "state_predicate_holds", "origin": "code_derived", "enforced_in_code": "unknown", "status": "confirmed", "tlc_profile": "core", "vacuity_note": "這是 IR 自身的一致性檢查（抓 IR 寫錯），不是策略性質。" },
+    { "id": "INV_NO_OPPOSITE_POSITION", "label_zh": "同商品不會同時持有反向部位", "expr": "position 為單一帶號淨部位", "origin": "trader_stated", "enforced_in_code": true, "status": "confirmed", "tlc_profile": "core", "vacuity_note": "以『淨部位』一個帶號整數表示時，此性質由表示法保證、恆成立，TLC 通過不帶資訊量。真正有意義的版本需模型『多合約月份各自部位』，0.1 未做（見設計文件未決問題）。" },
+    { "id": "INV_MAX_TRADE_LOSS", "label_zh": "單筆交易（含未實現）虧損不超過總資金 2%", "expr": "(position * (entry_pts - price_pts) * TX_multiplier + trade_cost <= 0.02 * capital_base) and (last_loss <= 0.02 * capital_base)", "origin": "template_proposed", "enforced_in_code": false, "status": "proposed_needs_human", "tlc_profile": "stress", "vacuity_note": "策略程式沒有任何停損或單筆虧損上限；2% 是範本建議值，需交易員確認。TLC 若找到反例，意思是『此策略規格在該壓力場景下不保證這條』，不是程式 bug。" }
+  ],
+  "stress": [
+    { "id": "STRESS_GAP", "label_zh": "開盤跳空", "kind": "gap", "tlc_encoding": "nondeterministic_action", "params": { "gap_points": { "todo": "TODO(人)", "reason": "最大可接受跳空點數需依歷史或交易所規則由人決定；TLA+ 示範用的數值是示範值，不是統計結果。" } }, "status": "template_default" },
+    { "id": "STRESS_CONSECUTIVE_ADVERSE", "label_zh": "連續逆向走勢", "kind": "consecutive_adverse", "tlc_encoding": "nondeterministic_action", "params": { "max_consecutive_bars": { "todo": "TODO(人)", "reason": "連續幾根 bar 逆向由人決定。" } }, "status": "template_default", "note": "此策略沒有停損，所以『連續停損』在這裡退化為『連續逆向、沒有任何停損觸發』。" },
+    { "id": "STRESS_LIQUIDITY_ZERO", "label_zh": "流動性歸零", "kind": "liquidity_zero", "tlc_encoding": "nondeterministic_action", "params": { "max_consecutive_bars": { "todo": "TODO(人)", "reason": "流動性消失持續幾根由人決定。" } }, "status": "template_default" }
+  ],
+  "open_findings": [
+    "換月與收盤決策排在同一個收盤時點（皆 every_day + market_close）。若換月單尚未成交就進行 _evaluate，_evaluate 用新前月合約的持倉（此時為 0）計算 qty，可能對新前月再下一張單。是否真的重複下單取決於 zipline order_target 對未成交單的處理，本次未實測，待人／工程確認。",
+    "days_left <= days_before_close 與 front != held_contract 兩條件同時成立才換月；若前月合約換了但剩餘天數仍大於 10，換月不會發生（此為程式碼讀出的行為，未實測）。"
+  ],
+  "out_of_scope": [
+    "VGRSI 訊號有沒有預測力（alpha 是否存在）",
+    "window=30、30/70 閾值是不是好參數（參數優化／敏感度）",
+    "DSR、PBO、CPCV、成本壓力下的統計有效性（屬 D1 晉升閘門）",
+    "回測績效數字、夏普值、樣本外表現",
+    "盤中（tick 內）行為、委託簿、部分成交",
+    "保證金追繳、強制平倉、券商與交易所異常",
+    "visibility graph 計算本身是否正確（訊號為不透明函式）"
+  ]
+}
