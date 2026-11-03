@@ -1,5 +1,5 @@
 {
-  "ir_version": "strategy-fsm-ir/0.1",
+  "ir_version": "strategy-fsm-ir/0.1.1",
   "id": "vgrsi_tx",
   "title_zh": "VGRSI 大台期貨（預設設定：只做多）",
   "provenance": {
@@ -93,7 +93,7 @@
     { "id": "INV_NO_SHORT_WHEN_DISABLED", "label_zh": "禁止放空時不會出現空單", "expr": "allow_short == false => position >= 0", "origin": "code_derived", "enforced_in_code": true, "status": "confirmed", "tlc_profile": "core", "code_ref": "strategy.py:_evaluate" },
     { "id": "INV_STATE_CONSISTENT", "label_zh": "狀態名稱與實際部位一致", "expr": "state_predicate_holds", "origin": "code_derived", "enforced_in_code": "unknown", "status": "confirmed", "tlc_profile": "core", "vacuity_note": "這是 IR 自身的一致性檢查（抓 IR 寫錯），不是策略性質。" },
     { "id": "INV_NO_OPPOSITE_POSITION", "label_zh": "同商品不會同時持有反向部位", "expr": "position 為單一帶號淨部位", "origin": "trader_stated", "enforced_in_code": true, "status": "confirmed", "tlc_profile": "core", "vacuity_note": "以『淨部位』一個帶號整數表示時，此性質由表示法保證、恆成立，TLC 通過不帶資訊量。真正有意義的版本需模型『多合約月份各自部位』，0.1 未做（見設計文件未決問題）。" },
-    { "id": "INV_MAX_TRADE_LOSS", "label_zh": "單筆交易（含未實現）虧損不超過總資金 2%", "expr": "position * (entry_pts - price_pts) * TX_multiplier <= 0.02 * capital_base", "origin": "template_proposed", "enforced_in_code": false, "status": "proposed_needs_human", "tlc_profile": "stress", "vacuity_note": "策略程式沒有任何停損或單筆虧損上限；2% 是範本建議值，需交易員確認。TLC 若找到反例，意思是『此策略規格在該壓力場景下不保證這條』，不是程式 bug。" }
+    { "id": "INV_MAX_TRADE_LOSS", "label_zh": "單筆交易（含未實現）虧損不超過總資金 2%", "expr": "(position * (entry_pts - price_pts) * TX_multiplier + trade_cost <= 0.02 * capital_base) and (last_loss <= 0.02 * capital_base)", "origin": "template_proposed", "enforced_in_code": false, "status": "proposed_needs_human", "tlc_profile": "stress", "vacuity_note": "策略程式沒有任何停損或單筆虧損上限；2% 是範本建議值，需交易員確認。TLC 若找到反例，意思是『此策略規格在該壓力場景下不保證這條』，不是程式 bug。" }
   ],
   "stress": [
     { "id": "STRESS_GAP", "label_zh": "開盤跳空", "kind": "gap", "tlc_encoding": "nondeterministic_action", "params": { "gap_points": { "todo": "TODO(人)", "reason": "最大可接受跳空點數需依歷史或交易所規則由人決定；TLA+ 示範用的數值是示範值，不是統計結果。" } }, "status": "template_default" },
