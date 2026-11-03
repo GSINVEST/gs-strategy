@@ -15,6 +15,7 @@ import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/noto-sans-tc/400.css";
 import "./style.css";
 import { Replay } from "./Replay";
+import { Fsm, FsmBody } from "./FsmPanel";
 import {
   api,
   compatible,
@@ -674,6 +675,7 @@ function App() {
     [sidecar, setSidecar] = useState(""),
     [showLoad, setShowLoad] = useState(false),
     [showReplay, setShowReplay] = useState(false),
+    [showFsm, setShowFsm] = useState(false),
     [revision, setRevision] = useState(0),
     [flash, setFlash] = useState(false);
   const flow = useRef(null);
@@ -1105,6 +1107,9 @@ function App() {
             回放
           </button>
         )}
+        <button data-testid="fsm" onClick={() => setShowFsm(true)}>
+          形式化驗證
+        </button>
         {session.fixture && (
           <span className="fixture" data-testid="fixture-banner">
             FIXTURE 資料・獨立 ledger
@@ -1293,6 +1298,7 @@ function App() {
         )}
       </div>
       {showReplay && <Replay close={() => setShowReplay(false)} revision={revision} />}
+      {showFsm && <Fsm close={() => setShowFsm(false)} revision={revision} />}
       <footer>
         <span>
           LIVE STRATEGY GRAPH <b>研究量測台</b>
@@ -1311,5 +1317,15 @@ function App() {
     </main>
   );
 }
-if (typeof document !== "undefined" && document.getElementById("root"))
-  createRoot(document.getElementById("root")).render(<App />);
+// ?view=fsm：桌面版內嵌用的唯讀頁。只載入形式化驗證檢視，只發 GET /api/fsm，不載入畫布、不輪詢、不帶任何寫入功能。
+function FsmEmbed() {
+  return (
+    <div className="fsm-embed" data-testid="fsm-embed">
+      <FsmBody revision={0} />
+    </div>
+  );
+}
+if (typeof document !== "undefined" && document.getElementById("root")) {
+  const embed = new URLSearchParams(window.location.search).get("view") === "fsm";
+  createRoot(document.getElementById("root")).render(embed ? <FsmEmbed /> : <App />);
+}

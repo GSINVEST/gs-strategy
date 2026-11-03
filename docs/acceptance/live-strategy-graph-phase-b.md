@@ -165,3 +165,12 @@ pytest警告包含依賴套件棄用、fixture bundle重註冊與零波動統計
 | 變更檔案的已知環境機密值及私鑰模式掃描 | PASS；僅輸出布林判準 |
 
 既有 7 項外部依賴／授權資料 skip 條件未改，依賴棄用及統計邊界警告未隱藏。全部必要驗收通過，**無回滾項目**。M13 固定契約、M14 修正後端與日曆隔離、M15 修正前端衝突及渲染、M16 補齊雙分頁 e2e 與本紀錄；提交皆使用繁體中文與指定 Codex trailer，不 push。
+
+### 附：形式化驗證（FSM）檢視驗收
+
+| 檢查 | 結果 |
+|---|---|
+| `python -m pytest tests/test_live_graph_fsm.py -q` | 9 passed（白名單、主機路徑、壞檔／缺檔、IR 退路、唯讀、Host 檢查、fixture 隔離、路徑逃逸） |
+| UI `npm test` | 35 passed（原 21 項保留，新增 14 項） |
+| 真 server `--fixture`＋Chromium `graph-fsm.spec.cjs` | 5 passed（F1–F5：端點、浮層內容與用詞、視窗內不溢出、內嵌頁唯讀、fixture 不動 ledger／圖） |
+| 既有 `graph.spec.cjs` | 11 passed（無回歸） |

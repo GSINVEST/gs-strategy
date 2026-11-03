@@ -316,3 +316,24 @@ TSMOM 保留舊策略的有限歷史視窗：EWMA 的有效樣本亦受 lookback
 - 即使 session 與啟動 preview 之間有其他工作開始，前端也須重新取得 active_job 並接手，避免卡住或顯示執行衝突橫幅。
 - HTTP error、job.message、節點 message 與取消 reason 的使用者可見文字皆提供繁體中文；未知錯誤使用固定安全中文訊息，不洩漏第三方例外原文。此規則取代上述顯示英文受控原文的描述。
 - run-estimate 以鎖內取得的圖快照計算並回傳該快照的 graph_hash；資料版本解析在鎖外進行，估算與執行共用唯一節點鍵函式。
+
+## 形式化驗證（FSM）檢視
+
+在畫布頂列新增「形式化驗證」按鈕（開啟浮層），並提供唯讀內嵌頁 `/?view=fsm`（給 genesis-deck 桌面版的面板載入）。內容：該策略的狀態圖（來自 `strategies/<id>/fsm.ir.json`）、不變量清單（來源／確認狀態／程式碼是否實作）、各 TLC 設定的結果、白話反例與其固定三段結尾。
+
+**資料來源與契約**
+
+| 來源 | 內容 | 沒有時 |
+|---|---|---|
+| `strategy-fsm-atlas/1` 結果檔（genesis-deck 的 `scripts/formal/fsm_atlas.py` 於主機端產生；TLC 只在那裡跑） | 全部欄位：verdict、反例白話文、負控制、模型數字 | 退回 IR |
+| `strategies/<id>/fsm.ir.json` | 狀態圖與規則清單；所有規則標「未檢查」，不做守衛白話化 | 顯示「還沒有資料」 |
+
+atlas 路徑：`--fsm-atlas <path>`，其次環境變數 `GS_FSM_ATLAS`，預設 `<root>/data/strategy-fsm/strategy-fsm-atlas.json`。`--fixture` 一律只讀內建的 `fixtures/fsm-atlas.fixture.json`（手寫示範，標明非真實結果），不看任何設定的路徑。
+
+**端點**：`GET /api/fsm`（唯讀；沒有任何寫入端點）。回應是 `strategy-fsm-view/1`：atlas 經**欄位白名單**重組（丟掉未知欄位、cfg 只留檔名、不帶主機路徑／提示詞／金鑰），並附目前載入圖對應的策略 id（`strategies/<id>/graph.json` → `<id>`）。atlas 超過 8 MB、壞檔、schema 不符都視為「沒有 atlas」，不崩潰。
+
+**用詞硬規則**：PASS 只寫「有限模型下不變量未被違反」，不寫已證明；只有「全部是通過類」的設定才是綠色，需人審／無法判定／不認得的狀態＝警示色，負控制未被抓到＝紅色；反例缺固定三段結尾時畫面顯示警示、不假裝完整。面向使用者文字不含後端模型名／供應商／主機／GPU（測試掃整頁）。
+
+**內嵌頁 `/?view=fsm` 的安全邊界**：只載入檢視元件，不載入畫布、不輪詢、只發 `GET /api/fsm`；server 仍只綁 127.0.0.1；靜態頁回應加 `frame-ancestors 'none'` 與 `X-Frame-Options: DENY`（桌面版用子 webview 而非 iframe，不受影響）。fixture 模式不改動 ledger／圖（e2e 驗證 ledger `selection_n` 與圖 hash 前後相同）。
+
+**已知缺口**：atlas 的反例只有白話文字，沒有逐步轉換序列，所以畫布無法在圖上「播放」反例；要做需上游 `fsm_atlas.py` 加 `trace`。桌面版使用者的本機要有 atlas 檔才看得到 TLC 結果，否則只顯示 IR 與「未檢查」。

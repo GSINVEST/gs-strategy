@@ -75,6 +75,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, {'node_types': s.registry.describe()})
             if not mutation and parts == ['api','graph']:
                 return self.reply(200, s.document())
+            if not mutation and parts == ['api','fsm']:
+                return self.reply(200, s.fsm_view())
             if not mutation and parts == ['api','replay']:
                 return self.reply(200, s.replay())
             if not mutation and parts == ['api','ledger']:
@@ -120,7 +122,8 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_header('Content-Length', str(len(data)))
                     self.send_header('Cache-Control', 'no-cache')
                     self.send_header('X-Content-Type-Options', 'nosniff')
-                    self.send_header('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; script-src 'self'")
+                    self.send_header('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; script-src 'self'; frame-ancestors 'none'")
+                    self.send_header('X-Frame-Options', 'DENY')
                     self.end_headers()
                     self.wfile.write(data)
                     return

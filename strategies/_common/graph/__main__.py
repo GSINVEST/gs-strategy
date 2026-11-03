@@ -19,6 +19,9 @@ def serve_ui(args):
                 service = fixture_service(Path(__file__).resolve().parents[3], args.graph)
             else:
                 service = GraphService(args.root or Path.cwd(), cache_dir=args.cache_dir, ledger_path=args.ledger)
+                if args.fsm_atlas:
+                    from .fsm import FsmView
+                    service.fsm_provider = FsmView(service.root, args.fsm_atlas)
                 try:
                     service.initial_graph_path = service.confined(args.graph).relative_to(service.root).as_posix()
                     service.load(args.graph)
@@ -61,6 +64,7 @@ def main(argv=None):
     parser.add_argument('--preview', action='store_true')
     parser.add_argument('--port', type=int, default=9102)
     parser.add_argument('--fixture', action='store_true')
+    parser.add_argument('--fsm-atlas', type=Path, help='形式化驗證結果檔（strategy-fsm-atlas/1），唯讀')
     args = parser.parse_args(argv)
     if args.fixture and (args.command != 'ui' or args.root or args.cache_dir or args.ledger):
         parser.error('測試資料模式僅適用於 ui，且不可覆寫儲存位置')
