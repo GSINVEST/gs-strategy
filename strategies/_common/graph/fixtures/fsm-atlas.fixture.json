@@ -1,0 +1,44 @@
+{
+  "schema": "strategy-fsm-atlas/1",
+  "generated_at": "2026-11-03T00:00:00Z",
+  "stale_days": 36500,
+  "tlc_ran": true,
+  "tlc_note": "測試資料：下列內容是手寫的示範，不是任何真實策略的檢查結果。",
+  "targets": [
+    {
+      "id": "fsm_demo",
+      "title_zh": "示範策略（測試資料・非真實策略）",
+      "status": "counterexample",
+      "status_reason": "示範：其中一條規則附有反例，用來檢查畫面能否正確呈現",
+      "drift": { "status": "not_compared" },
+      "graph": {
+        "nodes": [
+          { "id": "FLAT", "label_zh": "空手", "initial": true },
+          { "id": "LONG", "label_zh": "持有多單" }
+        ],
+        "edges": [
+          { "id": "T_FLAT_TO_LONG", "from": "FLAT", "to": "LONG", "label_zh": "空手 → 做多", "event": "REBALANCE", "event_label_zh": "月調倉", "guard_zh": "目標口數大於 0", "orders_zh": ["目標部位 目標口數（1 筆成交）"] },
+          { "id": "T_LONG_TO_FLAT", "from": "LONG", "to": "FLAT", "label_zh": "做多 → 空手", "event": "REBALANCE", "event_label_zh": "月調倉", "guard_zh": "目標口數等於 0", "orders_zh": ["目標部位 0（1 筆成交）"] }
+        ]
+      },
+      "invariants": [
+        { "id": "INV_STATE_CONSISTENT", "label_zh": "狀態名稱與實際部位一致", "origin": "code_derived", "confirm_status": "confirmed", "profile": "core", "enforced_in_code": "unknown", "verdict": "pass_with_bounds", "verdict_reason": "在此模型範圍內未發現違反", "detail": { "cfg": "core.cfg", "distinct_states": 42 } },
+        {
+          "id": "INV_MAX_TRADE_LOSS", "label_zh": "單筆交易虧損不超過上限", "origin": "trader_stated", "confirm_status": "confirmed", "profile": "stress", "enforced_in_code": false,
+          "verdict": "counterexample", "verdict_reason": "TLC 找到違反這條規則的情境（見白話反例）",
+          "detail": { "cfg": "stress-INV_MAX_TRADE_LOSS.cfg", "distinct_states": 117 },
+          "counterexample": {
+            "cfg": "stress-INV_MAX_TRADE_LOSS.cfg", "kind": "invariant", "trace_len": 2,
+            "text_zh": "【反例】在示範情境下，規則「單筆交易虧損不超過上限」被打破。\n  此規則由交易員提出，已確認；程式碼沒有實作這條規則（規格上的要求）。\n\n第 0 步  空手（FLAT）。\n第 1 步  收盤決策：空手 → 做多；成交 1 口。\n結果     第 1 步之後，單筆虧損超過上限。\n\n【這個反例用到的模型數字與來源】\n  - 只搜尋了 3 根 bar 以內的情境（搜尋界，不是市場主張）。\n  - 價格變動：示範值，不是歷史統計。\n\n【它代表什麼、不代表什麼】\n  - 代表：在上述模型內，存在一個情境違反這條規則。\n  - 不代表：策略一定會遇到這個情境，也不代表其他規則有問題。"
+          }
+        }
+      ],
+      "mutations": [
+        { "name": "doubleentry", "cfg": "mutation-doubleentry.cfg", "description_zh": "已持有時仍加碼", "caught": true, "distinct_states": 30 }
+      ],
+      "model": { "numbers": [ { "name": "搜尋步數", "value": 3, "unit": "根 bar", "kind": "search_bound", "source": "搜尋界，不是市場主張" } ] },
+      "check": { "ran": true, "refused": [] },
+      "out_of_scope": ["策略是否賺錢", "訊號本身的好壞"]
+    }
+  ]
+}

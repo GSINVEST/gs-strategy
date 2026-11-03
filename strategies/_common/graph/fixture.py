@@ -44,6 +44,8 @@ def fixture_service(source_root, graph_path='strategies/tsmom_tx_mtx/graph.json'
         if layout.exists():
             write_json(target.with_name('graph.layout.json'), json.loads(layout.read_text(encoding='utf-8')))
         service.fixture = True
+        from .fsm import FsmView
+        service.fsm_provider = FsmView(source_root, fixture=True)
         service.load(graph_path)
         service._fixture_directory = directory
         service._fixture_previous_zipline_root = previous

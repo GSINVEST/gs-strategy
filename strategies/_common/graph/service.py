@@ -226,6 +226,7 @@ class GraphService:
         self.revision = 0
         self.graph = None
         self.path = None
+        self.fsm_provider = None
         self.saved_hash = None
         self.jobs = {}
         self.active = None
@@ -241,6 +242,19 @@ class GraphService:
         if hasattr(self, 'initial_graph_path'):
             result['graph_path'] = self.initial_graph_path
         return result
+
+    def strategy_id(self):
+        # strategies/<id>/graph.json 對應策略 <id>；其他位置的圖沒有對應策略。
+        path = self.path
+        if path is None or path.name != 'graph.json' or path.parent.parent.name != 'strategies':
+            return None
+        return path.parent.name
+
+    def fsm_view(self):
+        from .fsm import FsmView
+        if self.fsm_provider is None:
+            self.fsm_provider = FsmView(self.root)
+        return self.fsm_provider.payload(self.strategy_id())
 
     def run_estimate(self):
         with self.lock:
