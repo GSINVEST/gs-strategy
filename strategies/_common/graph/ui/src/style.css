@@ -1,14 +1,18 @@
 :root {
-  --bg: #0f1419;
-  --panel: #1a212b;
-  --panel-2: #232c38;
-  --border: #2d3744;
-  --text: #e6edf3;
-  --muted: #8b98a9;
-  --accent: #4ea1ff;
-  --green: #3fb950;
-  --amber: #d29922;
-  --red: #f85149;
+  /* 色票對齊 GS Deck（gs-common assets/tokens/gs-gold.json 的 warm-black + gold）。
+     畫布是獨立服務，面板載不到 gs-theme.css，所以把同一組色值內嵌在這裡；
+     gs-common 改色時請一併更新（對應 --gs-bg／surface／surface-hover／border／text／muted／gold／success／amber／danger）。 */
+  --bg: #07060a;
+  --panel: #161210;
+  --panel-2: #1d1815;
+  --border: #2b2218;
+  --text: #f0e8d6;
+  --muted: #8a7a5a;
+  --accent: #d4af37;
+  --green: #22c55e;
+  --amber: #f5a524;
+  --red: #c45858;
+  /* 連接埠型別色：類別色必須彼此分得開，所以不跟著金色系走（金色系同一色相，分不出類別） */
   --port-bars: #3987e5;
   --port-signal: #199e70;
   --port-performance: #d95926;
@@ -16,7 +20,7 @@
   --series-1: var(--port-signal);
   --series-2: var(--port-performance);
   --series-3: var(--muted);
-  font-family: "IBM Plex Sans", "Noto Sans TC", sans-serif;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", Roboto, sans-serif;
   color: var(--text);
   background: var(--bg);
   font-size: 12px;
@@ -28,6 +32,10 @@
 }
 body {
   margin: 0;
+  background:
+    radial-gradient(1200px 600px at 78% -8%, rgba(212, 175, 55, 0.06), transparent 60%),
+    radial-gradient(900px 500px at -8% 92%, rgba(205, 127, 50, 0.05), transparent 60%),
+    var(--bg);
 }
 button,
 input,
@@ -72,7 +80,7 @@ pre,
 td,
 .n-meter strong,
 .ledger-result {
-  font-family: "IBM Plex Mono", "Noto Sans TC", monospace;
+  font-family: "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, "Microsoft JhengHei", "Noto Sans TC", monospace;
   font-variant-numeric: tabular-nums;
 }
 main {
@@ -195,7 +203,7 @@ main {
   white-space: nowrap;
 }
 .stage-label small {
-  font-family: "IBM Plex Mono", monospace;
+  font-family: "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, "Microsoft JhengHei", "Noto Sans TC", monospace;
   color: var(--accent);
   margin-right: 10px;
   font-size: 11px;
@@ -578,7 +586,7 @@ h3 {
 .axis {
   fill: var(--text);
   font-size: 8px;
-  font-family: "IBM Plex Mono", monospace;
+  font-family: "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, "Microsoft JhengHei", "Noto Sans TC", monospace;
 }
 .crosshair {
   stroke: var(--muted);
@@ -972,7 +980,7 @@ pre {
 .fsm-table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: normal; }
 .fsm-table th { position: static; text-align: left; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); padding: 4px 8px; }
 .fsm-table td { text-align: left; font-family: inherit; border-bottom: 1px solid var(--border); padding: 6px 8px; vertical-align: top; }
-.fsm-table td.mono, .fsm-table .mono { font-family: "IBM Plex Mono", "Noto Sans TC", monospace; }
+.fsm-table td.mono, .fsm-table .mono { font-family: "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, "Microsoft JhengHei", "Noto Sans TC", monospace; }
 .fsm-table tr.on td { background: var(--bg); }
 .fsm-table .muted, .fsm-body .muted { color: var(--muted); }
 .fsm-graph { max-width: 100%; height: auto; display: block; background: var(--bg); border-radius: 6px; }
