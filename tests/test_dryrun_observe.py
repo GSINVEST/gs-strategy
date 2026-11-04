@@ -346,6 +346,7 @@ def test_snapshot_v3_adds_regime_slices_only_when_labels_given(world):
     rs = snap["runs"][0]["history"]["regime_slices"]
     assert rs["rules_version"] == "regime-1" and rs["basis"] == "in_sample_backfill"
     assert set(rs["dims"]) == {"trend", "vol"}
+    assert rs["monthly"] and all(x["trend"] == "bull" and x["vol"] == "mid" for x in rs["monthly"][1:])
     assert snap["runs"][0]["history"]["equity"] == base["runs"][0]["history"]["equity"]   # 原有欄位不變
 
 

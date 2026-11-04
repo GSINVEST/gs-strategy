@@ -139,7 +139,9 @@ def build_snapshot(ledger: Path, strategies_dir: Path, *, now: dt.datetime, aler
                 run["d1"] = d1
                 run["history"] = _history(conn, rid) if tier == "observing" else None
                 if regime_labels is not None and run["history"] is not None:
-                    run["history"]["regime_slices"] = regime.slice_equity(run["history"]["equity"]["base"], regime_labels)
+                    base_eq = run["history"]["equity"]["base"]
+                    run["history"]["regime_slices"] = {**regime.slice_equity(base_eq, regime_labels),
+                                                       "monthly": regime.monthly_strip(base_eq, regime_labels)}
     finally:
         conn.close()
     al = [{"level": LEVEL[lv], "strategy_id": (m.split(":")[0] if ":" in m else None), "message": m}

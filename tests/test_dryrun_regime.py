@@ -111,3 +111,42 @@ def test_slice_maxdd_is_negative_percent_within_regime_days():
 def test_slice_empty_inputs():
     assert regime.slice_equity([], {})["dims"] == {"trend": [], "vol": []}
     assert regime.slice_equity([["2020-01-01", 100]], {})["dims"] == {"trend": [], "vol": []}
+
+
+# ---- 逐月熱圖資料 ----------------------------------------------------------
+
+def test_monthly_strip_groups_by_month_with_dominant_regime():
+    eq = _eq([0.01] * 60)
+    days = [p[0] for p in eq]
+    lab = {d: {"trend": "bull" if i < 30 else "bear", "vol": "low"} for i, d in enumerate(days)}
+    m = regime.monthly_strip(eq, lab)
+    assert [x["month"] for x in m] == sorted({d[:7] for d in days[1:]})
+    assert all(set(x) == {"month", "days", "trend", "vol", "ret", "sharpe12"} for x in m)
+    assert m[0]["trend"] == "bull" and m[-1]["trend"] == "bear" and m[0]["vol"] == "low"
+    first = [d for d in days[1:] if d[:7] == m[0]["month"]]
+    assert m[0]["days"] == len(first) and abs(m[0]["ret"] - ((1.01 ** len(first) - 1) * 100)) < 1e-6
+
+
+def test_monthly_strip_sharpe12_needs_252_returns():
+    eq = _eq([0.01, -0.004] * 150)                         # 300 天
+    days = [p[0] for p in eq]
+    lab = {d: {"trend": "bull", "vol": "mid"} for d in days}
+    m = regime.monthly_strip(eq, lab)
+    assert m[0]["sharpe12"] is None                        # 第一個月沒有 252 筆報酬
+    assert m[-1]["sharpe12"] is not None and m[-1]["sharpe12"] > 0
+
+
+def test_monthly_strip_unlabeled_month_has_none_regime_and_no_lookahead():
+    eq = _eq([0.01] * 30)
+    days = [p[0] for p in eq]
+    assert regime.monthly_strip(eq, {})[0]["trend"] is None
+    # 當月第一天的報酬用前一天的標籤：只有最後一天有標籤時，之前的日子都算沒標籤
+    lab = {days[-1]: {"trend": "bull", "vol": "low"}}
+    m = regime.monthly_strip(eq, lab)
+    assert all(x["trend"] is None for x in m)
+
+
+def test_monthly_strip_empty_and_cap():
+    assert regime.monthly_strip([], {}) == []
+    long = _eq([0.0005] * (regime.MAX_MONTHS * 22 + 300))
+    assert len(regime.monthly_strip(long, {})) <= regime.MAX_MONTHS     # 只留最近 MAX_MONTHS 個月

@@ -21,6 +21,8 @@ RULES_VERSION = "regime-1"
 BASIS = "in_sample_backfill"
 TREND_MA, TREND_SLOPE, VOL_WIN, VOL_MIN_HISTORY = 200, 60, 20, 250
 MIN_DAYS_FOR_SHARPE = 60
+SHARPE_WINDOW = 252                     # 熱圖的滾動 Sharpe 窗口：12 個月 ≈ 252 個交易日（固定，不可調）
+MAX_MONTHS = 120                        # 熱圖最多保留最近 10 年
 TRADING_DAYS = 252
 DIMS = ("trend", "vol")
 ORDER = {"trend": ("bull", "range", "bear"), "vol": ("low", "mid", "high")}
@@ -105,3 +107,50 @@ def slice_equity(equity, labels) -> dict:
     dims = {dim: [dict(label=name, **_stats(buckets[dim][name]["rets"], buckets[dim][name]["episodes"]))
                   for name in ORDER[dim] if name in buckets[dim]] for dim in DIMS}
     return {"rules_version": RULES_VERSION, "basis": BASIS, "unlabeled_days": unlabeled, "dims": dims}
+
+
+def _sharpe_of(rets):
+    n = len(rets)
+    m = sum(rets) / n
+    sd = math.sqrt(sum((x - m) ** 2 for x in rets) / (n - 1))
+    return m / sd * math.sqrt(TRADING_DAYS) if sd > 0 else None
+
+
+def monthly_strip(equity, labels) -> list:
+    """熱圖的逐月資料：每個日曆月一格。
+
+    month＝YYYY-MM；days＝當月交易日數；trend／vol＝當月出現最多天的標籤（沒有標籤的日子不算，全無則 None，
+    平手取排序在前者以保持確定性）；ret＝當月報酬（%，各日複利）；sharpe12＝截至當月最後一個交易日、
+    最近 SHARPE_WINDOW 筆日報酬的年化 Sharpe，不足 SHARPE_WINDOW 筆則 None。窗口固定、標籤規則同 slice_equity
+    （當日報酬歸前一個有標籤交易日的標籤），所以不增加任何可調參數。只留最近 MAX_MONTHS 個月。
+    """
+    ldates = sorted(labels)
+    months, order, all_rets = {}, [], []
+    for i in range(1, len(equity or [])):
+        v0, v1, d = equity[i - 1][1], equity[i][1], str(equity[i][0])
+        if not v0 or v0 <= 0:
+            continue
+        r = v1 / v0 - 1
+        all_rets.append(r)
+        j = bisect.bisect_left(ldates, d) - 1
+        lab = labels[ldates[j]] if j >= 0 else {}
+        key = d[:7]
+        if key not in months:
+            months[key] = {"rets": [], "trend": {}, "vol": {}, "sharpe12": None}
+            order.append(key)
+        b = months[key]
+        b["rets"].append(r)
+        for dim in DIMS:
+            if lab.get(dim):
+                b[dim][lab[dim]] = b[dim].get(lab[dim], 0) + 1
+        b["sharpe12"] = _sharpe_of(all_rets[-SHARPE_WINDOW:]) if len(all_rets) >= SHARPE_WINDOW else None
+    out = []
+    for key in order[-MAX_MONTHS:]:
+        b = months[key]
+        pick = lambda c: min(c, key=lambda k: (-c[k], k)) if c else None
+        growth = 1.0
+        for r in b["rets"]:
+            growth *= 1 + r
+        out.append({"month": key, "days": len(b["rets"]), "trend": pick(b["trend"]), "vol": pick(b["vol"]),
+                    "ret": (growth - 1) * 100, "sharpe12": b["sharpe12"]})
+    return out
