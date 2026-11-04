@@ -47,7 +47,28 @@ SNAP="$(mktemp)"; trap 'rm -f "$SNAP"' EXIT
 # --with-observing 輸出 /2 快照，gateway 須先接受 /2（見 docs/spec/dryrun-observation-tier.md），所以同樣預設關閉
 SNAP_ARGS=()
 [ "${DRYRUN_OBSERVE:-0}" = "1" ] && SNAP_ARGS=(--with-observing --registry "$DRYRUN_REPO/log/promotions.jsonl")
-if python3 -m strategies._common.dryrun.snapshot --ledger "$LEDGER" --strategies-dir "$DRYRUN_REPO/strategies" --out "$SNAP" ${SNAP_ARGS[@]+"${SNAP_ARGS[@]}"}; then
+# regime 切片（預設關閉，須 DRYRUN_REGIME=1 且 DRYRUN_OBSERVE=1）：輸出 /3 快照，gateway 須先接受 /3。
+# 標籤只用在樣本內回補的歷史區間，所以更新失敗就沿用上次成功的檔案；從來沒成功過就維持 /2，不影響推送。
+REGIME_FILE="${DRYRUN_REGIME_FILE:-$HOME/.local/state/gs-dryrun/regime_labels.json}"
+REGIME_ARGS=()
+if [ "${DRYRUN_REGIME:-0}" = "1" ] && [ "${DRYRUN_OBSERVE:-0}" = "1" ]; then
+  mkdir -p "$(dirname "$REGIME_FILE")"
+  if python3 scripts/regime_labels.py --out "$REGIME_FILE.new" && mv -f "$REGIME_FILE.new" "$REGIME_FILE"; then
+    :
+  else
+    rm -f "$REGIME_FILE.new"
+    echo "[WARN] regime 標籤更新失敗，沿用上次的檔案（沒有就不帶 regime 切片）"
+  fi
+  [ -s "$REGIME_FILE" ] && REGIME_ARGS=(--regime-labels "$REGIME_FILE")
+fi
+SNAP_OK=1
+if [ "${#REGIME_ARGS[@]}" -gt 0 ]; then
+  python3 -m strategies._common.dryrun.snapshot --ledger "$LEDGER" --strategies-dir "$DRYRUN_REPO/strategies" --out "$SNAP" ${SNAP_ARGS[@]+"${SNAP_ARGS[@]}"} "${REGIME_ARGS[@]}" || SNAP_OK=0
+  [ "$SNAP_OK" = 0 ] && echo "[WARN] 帶 regime 切片的快照產生失敗，退回不帶 regime 的快照"
+else
+  SNAP_OK=0
+fi
+if [ "$SNAP_OK" = 1 ] || python3 -m strategies._common.dryrun.snapshot --ledger "$LEDGER" --strategies-dir "$DRYRUN_REPO/strategies" --out "$SNAP" ${SNAP_ARGS[@]+"${SNAP_ARGS[@]}"}; then
   python3 -m strategies._common.dryrun.push --file "$SNAP"
   prc=$?
 else
