@@ -328,3 +328,28 @@ def test_tier_check_constraint(tmp_path):
     with pytest.raises(sqlite3.IntegrityError):
         L._conn.execute("INSERT INTO dry_runs(strategy_id,strategy_sha256,start_date,benchmark_status,"
                         "created_ts,tier) VALUES('a','b','c','d','e','live')")
+
+
+def test_snapshot_v3_adds_regime_slices_only_when_labels_given(world):
+    screen(world)
+    e, ledger, _ = make(world)
+    start(e)
+    e.run_day("vgrsi_tx", "2026-03-05")
+    e.backfill("vgrsi_tx", hist_start="2026-03-02")
+    base = snapshot.build_snapshot(world["ledger"], world["root"], now=NOW, include_observing=True, registry=world["reg"])
+    assert base["schema"] == "strategy-live-snapshot/2" and "regime_slices" not in base["runs"][0]["history"]
+    hist_days = [p[0] for p in base["runs"][0]["history"]["equity"]["base"]]
+    labels = {d: {"trend": "bull", "vol": "mid"} for d in hist_days}
+    snap = snapshot.build_snapshot(world["ledger"], world["root"], now=NOW, include_observing=True,
+                                   registry=world["reg"], regime_labels=labels)
+    assert snap["schema"] == "strategy-live-snapshot/3"
+    rs = snap["runs"][0]["history"]["regime_slices"]
+    assert rs["rules_version"] == "regime-1" and rs["basis"] == "in_sample_backfill"
+    assert set(rs["dims"]) == {"trend", "vol"}
+    assert snap["runs"][0]["history"]["equity"] == base["runs"][0]["history"]["equity"]   # 原有欄位不變
+
+
+def test_snapshot_regime_labels_require_observing(world):
+    import pytest
+    with pytest.raises(ValueError):
+        snapshot.build_snapshot(world["ledger"], world["root"], now=NOW, regime_labels={"2026-03-02": {}})
