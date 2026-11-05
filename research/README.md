@@ -9,6 +9,8 @@
 
 [`jason-reply-20261105.md`](jason-reply-20261105.md) 是 Jason 對缺口的回覆原文（2026-11-05，#gs-quant-software），兩份草稿的 `answer_zh` 皆出自此。另有 [`jason-reply-2-20261105.md`](jason-reply-2-20261105.md)（試驗計數對帳：累計 70；封存窗缺口）。
 
+金櫃第二版的事前登記草稿：[`fin_otc_spread_tx/prereg-draft.yaml`](fin_otc_spread_tx/prereg-draft.yaml)（未簽核；不放 `experiments/preregistration/`，那裡 commit 即凍結。定案並通過 `scripts/check_preregistration.py` 後才複製過去簽章）。
+
 ## 格式
 
 `strategy-research-draft/0.1`（格式與 linter 在 genesis-deck：`scripts/formal/lint_research_draft.py`，見 GSINVEST/genesis-deck#488）。每份草稿含 `gaps`（還差哪幾格）與 `ir_status`（`extractable: false` ＝ 缺轉換規則，不能抽 `fsm.ir.json`）。`provenance.sources[].sha256_lf` 綁定同目錄的 `source.html`（Jason 的進度報告原檔）。
