@@ -98,9 +98,15 @@
     }
   },
   "stat_ledger": {
-    "trials_total": 43,
-    "trials_exploration": 34,
-    "source": "來源文件第四節"
+    "trials_total": 36,
+    "trials_exploration": 27,
+    "trials_development": 9,
+    "source": "採用 Jason 2026-11-05 回覆的探索 27 組；總數 36 ＝ 27＋9 為推算值（原報告記探索 34、總計 43，已被取代）",
+    "superseded": {
+      "trials_total": 43,
+      "trials_exploration": 34,
+      "source": "原進度報告第四節"
+    }
   },
   "findings_zh": [
     "最近一年（242 天）：價差與同期台指期相關 −0.39；34 種組合最強 t = −2.63，未達門檻 3，只能說有跡象。",
@@ -236,6 +242,6 @@
     "reason_zh": "訊號有初步結果但效果小（每筆預期約 0.5～2 bp，可能不夠付成本）；進出場規則、成本、盤中資料來源皆未定；IR／Gslang 第一版只支援日頻。"
   },
   "open_questions": [
-    "探索次數的記載不一致：原報告記探索 34 種組合（累計試驗 43），Jason 回覆說最有機會的候選是從 27 個組合挑出。需向 Jason 確認兩者各自的範圍，才能正確記 trial 計數。"
+    "試驗計數依 Kevin 指示採用 Jason 的數字（探索 27）；原報告的 34／43 已列為 superseded。Jason 的 27 是否涵蓋全部探索嘗試，未向他確認。"
   ]
 }
