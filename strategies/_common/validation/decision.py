@@ -43,6 +43,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from statistics import NormalDist
 from dataclasses import dataclass, field, asdict
 from functools import lru_cache
 from pathlib import Path
@@ -112,6 +113,7 @@ class Facts:
     cluster_by: str | None = None
     unit: str | None = None          # trade / event / period —— 決定哪道 gate 適用
     preregistered: bool = True
+    window: str | None = None        # 1.2：exploration / lockbox / full
 
     def as_path(self) -> dict:
         """decision_path：寫進 trial 記錄、供日後重算的那組事實。"""
@@ -151,6 +153,7 @@ class Prescription:
     preconditions: tuple[str, ...]
     notes: tuple[str, ...]
     citations: tuple[str, ...]
+    threshold_t: float | None = None   # 1.2 lockbox 確認的數值門檻 |t|；其餘為 None
 
     def to_record(self) -> dict:
         """處方的可序列化形式，供 trial 記錄的 ``stat_decision`` 區塊使用。"""
@@ -237,6 +240,7 @@ _REMEDY = {
     ),
     "overlap": " 請宣告取樣是否重疊；重疊時一併給 holding_periods。",
     "family": " 請讀 trial ledger 決定這是第幾次檢定，不得自估。",
+    "window": " 請宣告資料窗 exploration / lockbox / full——lockbox 規則（1.2）靠它檢查。",
     "purpose": " 請宣告 screening / diagnostic / selection——它決定這次進不進 N。",
 }
 
@@ -253,8 +257,9 @@ def resolve(facts: Facts, version: str = DEFAULT_RULESET_VERSION) -> Prescriptio
     """由事實推導檢定處方。這個函式沒有自由度：同樣的事實必然得到同樣的處方。"""
     rs = load_ruleset(version)
     _validate_axes(rs, facts)
+    lockbox_notes, lockbox_k = _check_lockbox(rs, facts)
 
-    notes: list[str] = []
+    notes: list[str] = list(lockbox_notes)
     cites: list[str] = []
 
     # --- base：估計量 × 設計 -> 檢定家族 -----------------------------------
@@ -331,6 +336,16 @@ def resolve(facts: Facts, version: str = DEFAULT_RULESET_VERSION) -> Prescriptio
     threshold_text = str(thr["rule"])
     if "n_trials" in threshold_text:
         threshold_text = f"{threshold_text}  =>  p < {0.05 / n_trials:.5g}"
+    threshold_t: float | None = None
+    if lockbox_k is not None:
+        rule = rs["lockbox"]["confirm"]["threshold_rule"]
+        if lockbox_k >= int(rule["applies_when"]["k_min"]) and facts_for_threshold.family == "bounded_multiple":
+            z = NormalDist().inv_cdf(1 - float(rule["bonferroni_alpha"]) / 2 / lockbox_k)
+            threshold_t = max(float(rule["floor_abs_t"]), z)
+            threshold_text = (
+                f"|t| >= {threshold_t:.3f}  (= max({rule['floor_abs_t']:g}, "
+                f"z_{{1-{rule['bonferroni_alpha']}/(2K)}}), K={lockbox_k}；封存窗確認，1.2)"
+            )
     if thr.get("cite"):
         cites.append(str(thr["cite"]))
     online_fdr_required = "online_fdr" in (thr.get("also_required") or ())
@@ -400,7 +415,53 @@ def resolve(facts: Facts, version: str = DEFAULT_RULESET_VERSION) -> Prescriptio
         preconditions=tuple(base.get("preconditions", ())),
         notes=tuple(n for n in notes if n),
         citations=tuple(cites),
+        threshold_t=threshold_t,
     )
+
+
+def _check_lockbox(rs: Mapping, facts: Facts) -> tuple[list[str], int | None]:
+    """1.2 lockbox 規則的機制檢查。規則集沒有 ``lockbox`` 區塊（1.1）時什麼都不做。
+
+    回傳 (附註, 封存窗確認的 K)。K 非 None 表示這是封存窗確認。
+    違反一律丟錯，不降級、不警告：lockbox 的宣稱（篩選不計 N）只有在這些被擋住時才成立。
+    """
+    lb = rs.get("lockbox")
+    if not lb:
+        return [], None
+    window, purpose = facts.window, facts.purpose
+    notes: list[str] = []
+    if purpose == "screening" and window != "exploration":
+        raise DecisionError(
+            f"purpose=screening 只准讀 exploration 窗（收到 window={window!r}）。"
+            "screening 不計 N 的前提是只用探索窗；讀了 lockbox 或不分窗，"
+            "這批篩選必須改記 selection（N 加篩選總數 S）。"
+        )
+    if purpose == "diagnostic" and window == "lockbox":
+        raise DecisionError(
+            "purpose=diagnostic 不得讀 lockbox：診斷不該消耗封存窗，"
+            "讀過的部分會依 lb.burn_on_read 併入探索窗。"
+        )
+    if purpose == "screening":
+        notes.append("1.2：screening 僅用探索窗，ΔN=0；探索窗內的績效數字永遠不是證據（lockbox.not_guaranteed）。")
+    if not (purpose == "selection" and window == "lockbox"):
+        return notes, None
+    k = facts.n_trials
+    if k is None:
+        raise UnderdeterminedError(
+            "封存窗確認必須宣告 n_trials＝晉級數 K（不是篩選總數 S）。"
+            " 請讀 trial ledger 的晉級登記。"
+        )
+    cap = int(lb["parameters"]["k_cap"])
+    if k > cap:
+        raise DecisionError(
+            f"晉級數 K={k} 超過 k_cap={cap} 上限：請先在 L1 收緊晉級門檻，"
+            "不要把篩選壓力推給封存窗。"
+        )
+    notes.append(
+        f"1.2 封存窗確認：N 計晉級數 K={k}；須遵守 lockbox.conditions 全部六條，"
+        "任一不成立則該批 L1 篩選追溯改記 selection（N 加 S）。"
+    )
+    return notes, k
 
 
 def _replace(facts: Facts, **kw) -> Facts:

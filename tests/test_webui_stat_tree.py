@@ -145,7 +145,9 @@ def test_payload_is_json_serialisable():
 def test_ruleset_block_reflects_the_actual_yaml():
     out = stat_tree.ruleset_summary()
     assert out["available"] is True
-    assert out["version"] == "1.1"
+    # 頁面讀的是目錄裡排序最後（最新）的規則集，不是 decision.py 的預設版本；版本號跟著檔案走
+    latest = sorted(stat_tree.RULESET_DIR.glob("stat-ruleset-*.yaml"))[-1]
+    assert out["version"] == latest.stem.removeprefix("stat-ruleset-")
     # 規則集是這一頁的權威來源，不是硬編在頁面上的表格
     ids = {b["id"] for b in out["base"]}
     assert "mean_return.paired" in ids
