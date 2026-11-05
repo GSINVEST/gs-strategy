@@ -1,0 +1,677 @@
+schema: stat-ruleset/1
+version: "1.2"
+
+# ===========================================================================
+# 1.2 —— 已安裝（2026-11-05 使用者採用；實作於 decision.py）。
+# 與 1.1 的差異：(A) screening 記帳放寬並受 lockbox 約束；(B) 新增 axes.window；
+# (C) 新增 lockbox 區塊；(D) disclosure_required 增列 3 項。其餘與 1.1 逐項相等
+# （tests/test_stat_decision_12.py::test_12_is_11_plus_declared_changes_only 強制）。
+# DEFAULT_RULESET_VERSION 仍為 1.1；要用 1.2 須明確傳 version="1.2"。
+# 設計與審閱紀錄：specfeed-test docs/gslang-design-2026-11-05.md §13。
+# ===========================================================================
+
+# 本檔是《策略研究統計檢定規範 v1.1》的機器可讀形式。
+#
+# 規範原文是散文，讀者要自己記得「重疊持有期要 Newey-West」「厚尾以無母數為準」
+# 「這是第幾次檢定」。散文擋不住的失效模式是：研究者（或 agent）先看到結果，
+# 再回頭挑一個讓結果顯著的檢定。本檔的存在就是為了讓那件事在機制上做不到——
+# 檢定不是被「選」出來的，是由「宣告的資料性質」推導出來的。
+#
+# 因此本檔刻意不是一張 100 個葉節點的查表。它把「一個檢定處方」拆成五個槽位，
+# 每個槽位由一個獨立的事實決定：
+#
+#   槽位            由哪個事實決定              對應規範原文
+#   ------------    ------------------------    ----------------------------
+#   base（檢定家族） estimand × design           §零 Q1+Q2、§二 情境對照表
+#   se（標準誤）     overlap × autocorr          §零 Q4、§一 關卡二
+#   primary（主檢定）normal                      §零 Q3、§零 預設立場
+#   threshold（門檻）family × n_trials           §零 Q5、§一 關卡四、§五
+#   gates（最小樣本）estimand × n_eff            §五 全域門檻速查
+#
+# 五個槽位分別解析、最後合成，所以「換一個檢定」必然對應「改一個宣告的事實」，
+# 而事實是可以被獨立稽核的（JB 的 p 值、Ljung-Box 的 p 值、ledger 的 N）。
+#
+# 增修本檔即等同修訂規範：version 要跟著跳，且既有 trial 記錄裡的 ruleset 版本
+# 不得回頭改寫——舊判決依舊版規則成立，這是可回溯性的前提。
+
+revises:
+  version: "1.1"
+  reason: fastbt L1 篩選模式的 ΔN 記帳（fastbt-engine-design §4.4）
+  unchanged: [axes, base, se_policy, bootstrap_spec, gates, verdicts]
+
+derived_from:
+  title: 策略研究統計檢定規範
+  version: v1.1
+  dated: 2026-08-31
+  source_doc: gs-bulltrap-plan/docs/統計檢定規範.md
+  note: >
+    原規範以台股現貨與事件研究為主要語境。本檔在不改變其判準的前提下補上
+    期貨語境需要、而原文未涵蓋的三處：(a) 檢定對象是「單一策略」還是
+    「M 個中的最佳」的分流（best_of_M → DSR / SPA）；(b) 前置的標的可交易性
+    檢定（tradability，規範沒有這一關）；(c) purpose 三分法造成的 N 記帳規則。
+    這三處在 additions 區塊標記 origin: extension，與規範原文區分開來。
+
+
+# ---------------------------------------------------------------------------
+# 一、五個必須宣告的事實（決策樹的問句）
+#
+# 缺任何一個 required 事實，resolver 一律拒絕作答（fail-closed），不套預設值。
+# 唯一例外是 normal：規範 §零 已明文給出預設立場（台股日報酬非常態、事件報酬
+# 厚尾），所以 unknown 併入 no。這個預設是保守方向（走無母數），不是省事。
+# n_eff 沒有這種保守方向可走——猜大會讓門檻變鬆，猜小會讓結論被錯殺——所以
+# 它 unknown 必須拒答。
+# ---------------------------------------------------------------------------
+axes:
+
+  estimand:
+    required: true
+    doc: 這個宣稱是關於哪一個量。決定 base 與 gates。
+    values:
+      mean_return:      同期／事件平均（超額）報酬
+      rank_ic:          因子值對未來報酬的排序預測力
+      win_rate:         勝率
+      sharpe:           夏普值
+      group_difference: 兩組或多組之間的報酬差異
+      monotonicity:     分位組合報酬的單調性
+      contingency:      兩個類別變數是否關聯（例：勝負 × 多空頭年）
+      cointegration:    兩腳以上價差是否共整合
+      serial_structure: 標的本身是否帶有可利用的序列結構
+      distribution_shape: 報酬序列是否常態
+      drawdown:         最大回撤
+
+  design:
+    required: true
+    doc: 比較幾組、各組是配對還是獨立。規範 §零 Q2 稱為「最容易選錯的一題」。
+    values:
+      one_sample:       單一序列對 0（或對某個常數）
+      paired:           同一段期間的兩條序列，逐期取差
+      two_independent:  兩批不重疊的觀測
+      k_groups:         三組以上
+      series_vs_series: 兩條序列的長期關係（共整合、相關）
+      none:             不比較（描述性／單一序列的結構檢定）
+
+  overlap:
+    required: true
+    doc: |
+      觀測值彼此獨立嗎。規範 §零 Q4：持有期 5 日卻每日取樣，相鄰觀測共享
+      4 天報酬，標準誤被低估、t 值虛胖。
+    values:
+      none:        不重疊取樣
+      overlapping: 重疊持有期（需一併宣告 holding_periods）
+      clustered:   橫斷面或同日事件群聚（需一併宣告 cluster_by）
+
+  autocorr:
+    required: true
+    doc: Ljung-Box 的結論。規範 §二：有自相關 → t 檢定全部改 Newey-West。
+    # 引號不可省：YAML 1.1 把裸 yes/no 解析成布林 True/False，
+    # 值就會變成 [True, False, 'unknown']，宣告 autocorr="yes" 反而被判為不合法。
+    values: ["yes", "no", "unknown"]
+
+  normal:
+    required: false
+    default: "no"
+    doc: |
+      Jarque-Bera（或 n<2000 時 Shapiro-Wilk）的結論。unknown 併入 no，
+      依規範 §零 的預設立場：以無母數為主檢定，t 檢定並列供對照，
+      兩者結論不一致時以無母數為準。
+    values: ["yes", "no", "unknown"]
+
+  family:
+    required: true
+    doc: |
+      這是第幾次檢定。規範 §零 Q5 與 §一 關卡四。這個欄位不得由執行者自估——
+      必須讀 trial ledger 得出，見 §四 multiplicity。
+    values:
+      single_preregistered: 事前登記的唯一主假說
+      bounded_multiple:     事前登記、數量有界的一組（需宣告 n_trials）
+      open_mining:          連續挖掘型（全旋鈕測試、變體不斷追加）
+      best_of_M:            從 M 個已跑完的策略／變體中挑最好的那個
+
+  purpose:
+    required: true
+    doc: |
+      【extension，規範原文無此軸】這次 trial 進不進入多重檢定的母體。
+      沿用 gs-bulltrap-plan/docs/PLAN-auto-research-loop.md §7 的 diagnostic／
+      selection 物理隔離，另加 screening 一態給 349 候選的機械分診用。
+      N 記帳規則見 §四。
+    values:
+      screening:  機械分診，不跑回測、不下績效判決。N += 0
+      diagnostic: 只回答「反應面形狀」，永不被選為最終策略。N += 0
+      selection:  可能被採用的一次嘗試。N += 1，無條件
+
+  window:
+    required: true
+    doc: |
+      【1.2 新增】這次檢定讀的是哪一段資料。screening 只准 exploration；
+      diagnostic／selection 不得在讀 lockbox 以外假裝讀了；lockbox 只供確認。
+    values:
+      exploration: 探索窗（L1 篩選可用績效）
+      lockbox:     封存窗（只供對已登記候選做一次確認）
+      full:        不分窗（1.1 以前的做法；screening 不得使用）
+
+  n_eff:
+    required: true
+    doc: |
+      有效獨立觀測數，不是資料列數。重疊取樣、事件群聚、同一場崩盤的多個
+      超越值都要先 decluster。規範 §五 的所有 n 門檻讀的都是這個數。
+      不得以列數代入——那正是「假裝有 697 個獨立賭注」的錯誤。
+    type: int
+
+
+# ---------------------------------------------------------------------------
+# 二、base 槽位：estimand × design → 檢定家族
+#
+# parametric 與 nonparametric 一律成對給出。規範 §零：兩者結論不一致時以
+# 無母數為準，所以 nonparametric 缺項的規則必須明寫 null 並附理由，
+# 不得靜默省略——省略會讓「沒有無母數版本」與「忘了跑」長得一樣。
+# ---------------------------------------------------------------------------
+base:
+
+  - id: mean_return.one_sample
+    when: {estimand: mean_return, design: one_sample}
+    parametric: 單樣本 t 檢定
+    nonparametric: Wilcoxon 符號檢定
+    interval: bootstrap CI
+    must_report: [point_estimate, t_stat, p_value, n_eff]
+    cite: 規範 §二「事件後超額報酬 ≠ 0？」
+
+  - id: mean_return.paired
+    when: {estimand: mean_return, design: paired}
+    parametric: 成對 t 檢定（對逐期報酬差）
+    nonparametric: Wilcoxon 符號檢定
+    interval: bootstrap CI
+    forbids:
+      - test: 獨立雙樣本 t
+        why: 同期報酬高度相關，獨立假設不成立。規範 §零 Q2 明列為最常見的選錯。
+    must_report: [point_estimate, t_stat, p_value, n_eff]
+    cite: 規範 §二「策略贏基準？（同期間）」
+
+  - id: group_difference.two_independent
+    when: {estimand: group_difference, design: two_independent}
+    parametric: Welch 雙樣本 t 檢定
+    nonparametric: Mann-Whitney U
+    interval: bootstrap CI
+    preconditions:
+      - 兩組事件不得重疊，否則獨立假設不成立
+    must_report: [point_estimate, t_stat, p_value, n_eff, group_sizes]
+    cite: 規範 §二「A 組事件 vs B 組事件？」
+
+  - id: group_difference.k_groups
+    when: {estimand: group_difference, design: k_groups}
+    parametric: 單因子 ANOVA
+    nonparametric: Kruskal-Wallis
+    interval: null
+    must_report: [group_means, f_stat, p_value, n_eff, group_sizes]
+    also_required: [monotonicity.none]
+    cite: 規範 §二「五分位報酬有差異？」
+
+  - id: monotonicity.none
+    when: {estimand: monotonicity, design: none}
+    parametric: 分位序號對分位報酬的斜率檢定
+    nonparametric: Spearman（分位序號 vs 分位報酬）
+    interval: null
+    must_report: [quantile_returns, spearman_rho, p_value]
+    verdict_note: >
+      只有最高分位突出而中間亂序，判為尾部雜訊而非排序能力，不得宣稱有排序力。
+    cite: 規範 §二 備註、§三 A 類
+
+  - id: rank_ic.one_sample
+    when: {estimand: rank_ic, design: one_sample}
+    parametric: IC 時間序列的均值 t 檢定
+    nonparametric: null
+    nonparametric_absent_because: >
+      Spearman Rank IC 本身已是無母數統計量；對其時間序列取均值後做 t 檢定
+      是對「IC 期望值」的推論，規範 §二 未要求再套一層無母數。
+    interval: block bootstrap CI
+    also_required: [win_rate.one_sample]
+    also_required_note: IC 為正的期數比例要另做二項檢定（規範 §三 A 類）
+    must_report: [ic_mean, ic_ir, t_stat, p_value, n_eff, positive_period_ratio]
+    cite: 規範 §二「因子值預測未來報酬？」、§三 A 類
+
+  - id: win_rate.one_sample
+    when: {estimand: win_rate, design: one_sample}
+    parametric: 二項檢定（H0：p = 0.5）
+    nonparametric: null
+    nonparametric_absent_because: 二項檢定本身即精確檢定，無需無母數替代。
+    interval: Clopper-Pearson CI
+    must_report: [win_rate, n_eff, p_value]
+    cite: 規範 §二「勝率 ≠ 50%？」
+
+  - id: sharpe.one_sample
+    when: {estimand: sharpe, design: one_sample}
+    parametric: Lo (2002) 自相關修正標準誤
+    nonparametric: block bootstrap 信賴區間
+    interval: block bootstrap CI
+    must_report: [sharpe, se, ci_95, n_eff, periods_per_year]
+    impl: strategies/_common/validation/sharpe.py
+    cite: 規範 §二「Sharpe 顯著 > 0？」
+
+  - id: sharpe.paired
+    when: {estimand: sharpe, design: paired}
+    parametric: 夏普差的 bootstrap 信賴區間
+    nonparametric: block bootstrap 信賴區間
+    interval: block bootstrap CI
+    must_report: [sharpe_a, sharpe_b, delta, ci_95, n_eff]
+    cite: 規範 §三 C 類（濾網版 vs 抱著不動）
+
+  - id: contingency.two_independent
+    when: {estimand: contingency, design: two_independent}
+    parametric: 卡方獨立性檢定
+    nonparametric: Fisher 精確檢定
+    interval: null
+    switch_to_nonparametric_when: 任一格期望值 < 5
+    must_report: [contingency_table, statistic, p_value]
+    cite: 規範 §二「年度／regime 別勝負分佈有差？」
+
+  - id: cointegration.series_vs_series
+    when: {estimand: cointegration, design: series_vs_series}
+    parametric: Engle-Granger（兩腳）／Johansen（多腳）
+    nonparametric: null
+    nonparametric_absent_because: 共整合檢定的分佈理論本身即非標準常態，無並列版本。
+    interval: null
+    also_required_note: 另以 OU 過程估價差半衰期；半衰期長於預計持有耐心者不可用。
+    preconditions:
+      - 形成期與交易期必須嚴格分開，且逐期滾動複驗
+    must_report: [test_stat, p_value, half_life, formation_window, trading_window]
+    cite: 規範 §二、§三 E 類
+
+  - id: distribution_shape.one_sample
+    when: {estimand: distribution_shape, design: one_sample}
+    parametric: Jarque-Bera
+    nonparametric: Shapiro-Wilk
+    interval: null
+    switch_to_nonparametric_when: n < 2000
+    must_report: [statistic, p_value, skew, kurtosis, n_eff]
+    role: 這一項的結果就是 normal 軸的來源，必須先於主檢定執行。
+    cite: 規範 §二「報酬序列常態嗎？」
+
+  - id: serial_structure.none
+    when: {estimand: serial_structure, design: none}
+    parametric: 變異比檢定（Lo-MacKinlay）＋ Ljung-Box
+    nonparametric: runs test、permutation entropy、DFA Hurst
+    interval: null
+    origin: extension
+    must_report: [vr_profile, ljung_box_p, runs_p, permutation_entropy, hurst_dfa]
+    impl: strategies/_common/validation/tradability.py
+    impl_status: >
+      尚未在 main 上——tradability.py 目前只存在於未合併的
+      dev/pv-mtf-mdd-disposition。這一關要等那條分支落地才跑得動。
+    verdict_note: >
+      這一關檢定的是「標的」不是「策略」，所以不進入 N（見 §四）。
+      通過只代表序列在這個樣本上可與隨機漫步區分，是必要條件不是充分條件。
+      必須在訓練窗上跑並凍結結論，再回測其後的窗——同一段樣本上既篩選又評估
+      就是選樣偏差，而這個檢定偵測不到你這樣做了。
+    cite: extension；規範無此關，理由見 additions.pre_tradability
+
+  - id: drawdown.none
+    when: {estimand: drawdown, design: none}
+    parametric: null
+    parametric_absent_because: >
+      單一歷史回撤路徑只是眾多可能排列之一，沒有可用的參數分佈。
+    nonparametric: 交易報酬順序重排的蒙地卡羅
+    interval: 重排分佈的 95% 分位
+    must_report: [mdd_observed, mdd_p95_montecarlo, n_permutations, n_eff]
+    cite: 規範 §三 D 類
+
+
+# ---------------------------------------------------------------------------
+# 三、se 槽位：overlap × autocorr → 標準誤修正
+#
+# 規範 §零 Q4 與 §一 關卡二。iid 只在「不重疊且無自相關」時成立；其餘一律修正。
+# unknown 的自相關不得當成 no——沒跑 Ljung-Box 跟跑了沒過是兩件事。
+# ---------------------------------------------------------------------------
+se_policy:
+
+  - id: se.iid
+    when: {overlap: "none", autocorr: "no"}
+    correction: iid
+    note: 唯一可以不修正的組合。
+
+  - id: se.newey_west.autocorr
+    when: {overlap: "none", autocorr: "yes"}
+    correction: newey_west
+    lag_rule: floor(4 * (n_eff/100)^(2/9))
+    lag_rule_note: Newey-West 的標準經驗法則；重疊取樣時改用下一條的持有期規則。
+
+  - id: se.newey_west.overlap
+    when: {overlap: overlapping}
+    correction: newey_west
+    lag_rule: holding_periods - 1
+    requires_fact: holding_periods
+    note: 規範 §零 Q4 明訂 lag 取持有天數減一。此規則不看 autocorr——
+      重疊本身就保證了自相關，不需要再檢定一次。
+
+  - id: se.cluster
+    when: {overlap: clustered}
+    correction: cluster
+    requires_fact: cluster_by
+    note: |
+      同日大量事件（ETF 定審全名單同日生效是典型）之間不獨立。按 cluster_by
+      做 cluster 標準誤，或把同日事件合併成單一投組觀測。規範 §三 B 類。
+
+  - id: se.unknown_autocorr
+    when: {overlap: "none", autocorr: "unknown"}
+    correction: REFUSE
+    why: |
+      沒有 Ljung-Box 結論就無法判斷 iid 是否成立，而 iid 是唯一會讓標準誤變小的
+      選項。此處若預設 iid，等於讓「沒檢查」自動得到最寬鬆的待遇——這正是規範
+      要防的方向。先跑 distribution_shape 與 Ljung-Box，再回來。
+
+bootstrap_spec:
+  # 規範 §二 末段的統一規格。凡 interval 走 bootstrap 者一律適用。
+  method: [stationary, circular_block]
+  block_length: max(holding_periods, sqrt(n_eff))
+  n_resamples_min: 5000
+  report: ci_95
+  impl: strategies/_common/validation/reality_check.py
+  forbidden:
+    - method: 交易層級 iid bootstrap
+      why: 假設就錯，只會產出假性收窄的 CI。
+    - method: 標準（非 block）permutation test
+      why: 置換摧毀波動叢聚，而波動叢聚正是 alpha 來源，null 太弱必然假性顯著。
+
+
+# ---------------------------------------------------------------------------
+# 四、threshold 槽位：family × n_trials → 顯著門檻與多重檢定方法
+#
+# 規範 §一 關卡四、§五。n_trials 讀 ledger，不得由執行者自估。
+# ---------------------------------------------------------------------------
+multiplicity:
+
+  n_accounting:
+    # 【extension】purpose 決定這次 trial 進不進母體。
+    # 1.2 修訂（A）：1.1 的 screening 是「不跑回測、不看績效」。fastbt L1 會用探索窗
+    # 績效排序候選，所以放寬為「可看探索窗績效」，條件是 lockbox 區塊全部成立。
+    # 任一條件不成立，該次篩選必須改記 selection（ΔN 計入全部篩選數）。
+    screening:  {delta_n: 0, max_verdict: 候選, may_be_selected: false, requires_lockbox_conditions: true}
+    diagnostic: {delta_n: 0, max_verdict: 無,   may_be_selected: false}
+    selection:  {delta_n: 1, max_verdict: 可交易, may_be_selected: true}
+    rules:
+      - selection 的 N 無條件累加，包含跑壞的、中途放棄的、結果難看沒寫進報告的。
+        漏記一個，DSR 就被高估一分。
+      - 冠軍任一關失敗即本輪 FAIL；改用亞軍＝新一輪，N 不歸零。
+      - 任何參數微調都算一次新 trial，無例外。
+      - 降低門檻永遠不是同一輪的選項。門檻只准向上收緊。
+
+  thresholds:
+    - id: thr.single
+      when: {family: single_preregistered}
+      rule: "|t| >= 2"
+      equivalently: p < 0.05
+      cite: 規範 §五「單一事前登記假說」
+
+    - id: thr.bonferroni
+      when: {family: bounded_multiple, n_trials_max: 5}
+      rule: "p < 0.05 / n_trials"
+      cite: 規範 §一 關卡四
+
+    - id: thr.hlz
+      when: {family: bounded_multiple, n_trials_min: 6}
+      rule: "|t| >= 3"
+      cite: Harvey, Liu & Zhu (2016)；規範 §一 關卡四、§五
+
+    - id: thr.mining
+      when: {family: open_mining}
+      rule: "|t| >= 3"
+      also_required: [online_fdr]
+      cite: 規範 §五「探索式／多變體挖掘」
+
+    - id: thr.best_of_m
+      when: {family: best_of_M}
+      rule: "DSR > 0.95 且 PBO < 0.5"
+      procedure:
+        - Deflated Sharpe Ratio，N 讀 ledger 的 selection trial 數
+        - 跨 M 個策略另做 Hansen SPA（或 White Reality Check）
+        - 需要逐一指認哪些勝出時用 Romano-Wolf StepM
+      impl: strategies/_common/validation/{sharpe,pbo}.py（DSR / PBO 在 main 上）
+      impl_status: >
+        SPA / Reality Check 那一腿在 reality_check.py，目前只存在於未合併的
+        dev/pv-mtf-mdd-disposition。在它落地之前 best_of_M 只能做到 DSR + PBO。
+      cite: Bailey & López de Prado (2014)；規範 §一 關卡四、§二
+
+  no_preregistration_penalty:
+    # 規範 §一 關卡零：沒有事前登記而事後發現的顯著結果，不是無效，是降級。
+    effect: family 一律升為 open_mining（門檻 |t| >= 3）
+    label: 探索性發現
+    additional: 需以新資料重新驗證一次才能升回正式假說。
+
+  online_fdr:
+    # 【extension】規範假設 N 事先已知；auto-research loop 是 online 情境。
+    origin: extension
+    method: ADDIS
+    alpha: 0.05
+    defaults: {wealth: alpha/2, lambda: 0.25, tau: 0.5}
+    impl: strategies/_common/validation/online_fdr.py
+    impl_note: >
+      演算法自寫以維持本子套件「只依賴 numpy/scipy/pandas」的不變式；正確性由
+      tests/test_online_fdr.py 對 online-fdr 套件逐步比對 alpha_t 與拒絕決策
+      來保證（套件未安裝時 skip）。不是包一層 wrapper。
+    semantics: >
+      ADDIS 沒有字面上的財富帳戶。每次檢定算出的 alpha_t 會隨著無效變體累積而
+      單調衰減；衰減到呼叫端設定的 floor 以下即視為搜尋預算耗盡、應停機。
+      floor 刻意沒有預設值——「多小的 p 值還當真」是判斷不是統計常數。
+    p_value_contract: >
+      p 值的定義必須在 pre-registration 裡凍結，且 AddisBudget.test_one 強制
+      要求 p_value_source。把 anytime-valid 直接套在 Sharpe 或策略搜尋上的
+      論文查無，這是自己接線不是照抄；不同定義的 p 值不可互換，混著投進同一個
+      預算會讓 FDR 控制失效，而且從輸出上看不出來。
+    cite: Tian & Ramdas (2019)；PLAN-auto-research-loop.md §6
+
+
+# ---------------------------------------------------------------------------
+# 四之二、lockbox 區塊（1.2 新增）
+#
+# 目的：讓「用績效篩出 K 個候選（K << 篩選總數 S）」與「對 K 個候選做確認」
+# 在資料上互不重疊，使確認階段的 N 只需計 K 而非 S。
+# 這是新的統計宣稱：其有效性完全取決於下列條件是否被機制（而非自覺）保證。
+# ---------------------------------------------------------------------------
+lockbox:
+  claim: >
+    當且僅當 conditions 全部成立，L1 以探索窗績效篩選的 S 個候選不計入 N
+    （ΔN=0）；對封存窗的確認以 K（晉級數）作為 N。
+  conditions:
+    - id: lb.disjoint
+      text: 探索窗與封存窗在時間上不重疊，且間隔 embargo >= lag + horizon。
+    - id: lb.unread
+      text: L1 全程無法讀取封存窗；資料載入層強制，未登記讀取為硬錯誤並寫帳。
+    - id: lb.prereg_before_read
+      text: 候選與其 p 值定義（p_value_source）在第一次讀封存窗之前凍結並登記。
+    - id: lb.one_shot
+      text: 每個候選對封存窗至多確認一次；失敗者不得調參後重測（調參＝新 trial）。
+    - id: lb.burn_on_read
+      text: >
+        封存窗被確認讀取過的部分即視為「已用掉」，併入探索窗；之後任何新一輪 L1
+        篩選不得再把它當作未讀資料。每日增長的新資料才是新的封存窗。
+    - id: lb.frozen_library
+      text: 確認階段的候選池（因子庫）在確認前凍結；確認期間不得追加候選。
+  confirm:
+    purpose: selection
+    delta_n: 1
+    family_rule: >
+      依晉級後結構選 bounded_multiple（K<=5 用 Bonferroni、K>=6 用 HLZ）
+      或 best_of_M（挑最好的那個時，DSR 的 N=K）。
+    requires: [p_value, p_value_source, online_fdr_budget]
+    threshold_rule:
+      # 1.1 的 thr.hlz 對 K>=6 固定 |t|>=3、不隨 K 增大；K 達數百時比 Bonferroni 寬鬆。
+      # 封存窗確認在 K>=6 時改取兩者較嚴者；K<=5 沿用 1.1 的 thr.single／thr.bonferroni。
+      kind: max_of_floor_and_bonferroni
+      applies_when: {k_min: 6}
+      floor_abs_t: 3.0
+      bonferroni_alpha: 0.05
+      rule: "|t| >= max(3, z_{1 - 0.025/K})"
+      note: 這是對 1.1 的實質收緊，不是放寬；符合「門檻只准向上收緊」。
+  parameters:
+    # 數字是判斷不是統計常數；2026-11-05 已由使用者採用。
+    status: adopted_2026-11-05   # 數字屬判斷值，調整須升版
+    enforced_by_resolver: [k_cap]
+    not_enforced_by_resolver: [lockbox_min_years, embargo, both_windows_include_bear]   # 無對應 Facts，由呼叫端（fastbt 資料層）負責
+    lockbox_min_years: 5
+    lockbox_min_years_why: >
+      3 年封存窗下，|t|>=3 對應觀測夏普 >=1.73（80% 檢定力需真實夏普 >=2.22），
+      幾乎只有極強訊號能通過；5 年降到 1.34／1.72，8 年降到 1.06／1.36。
+      且須含至少一段完整空頭（沿用 gate.sample_period）。
+    k_cap: 50
+    k_cap_why: >
+      K 越大，確認階段的多重檢定與 ADDIS 預算消耗越快；上限強迫 L1 的晉級門檻
+      先收緊，而不是把篩選壓力推給封存窗。
+    embargo: "max(lag, horizon) 之外再加 1 個 horizon"
+  power_table:
+    # 單純 t 檢定：SR_obs >= t/sqrt(T_years)；80% 檢定力：(t + 0.84)/sqrt(T_years)。
+    # 日頻 iid 假設；有自相關或厚尾時門檻更高。K<=5 用 Bonferroni、K>=6 用 |t|>=3（1.1 規則）。
+    note: 觀測夏普為年化；數字為算術推導，非回測結果。
+    rows:
+      - {years: 3, K: 1,   t: 2.00, sr_observed_min: 1.15, sr_true_for_80pct_power: 1.64}
+      - {years: 3, K: 5,   t: 2.58, sr_observed_min: 1.49, sr_true_for_80pct_power: 1.97}
+      - {years: 3, K: 20,  t: 3.00, sr_observed_min: 1.73, sr_true_for_80pct_power: 2.22}
+      - {years: 5, K: 1,   t: 2.00, sr_observed_min: 0.89, sr_true_for_80pct_power: 1.27}
+      - {years: 5, K: 5,   t: 2.58, sr_observed_min: 1.15, sr_true_for_80pct_power: 1.53}
+      - {years: 5, K: 20,  t: 3.00, sr_observed_min: 1.34, sr_true_for_80pct_power: 1.72}
+      - {years: 8, K: 1,   t: 2.00, sr_observed_min: 0.71, sr_true_for_80pct_power: 1.00}
+      - {years: 8, K: 5,   t: 2.58, sr_observed_min: 0.91, sr_true_for_80pct_power: 1.21}
+      - {years: 8, K: 20,  t: 3.00, sr_observed_min: 1.06, sr_true_for_80pct_power: 1.36}
+  supplementary_checks:
+    - id: lb.half_split_direction
+      text: 封存窗切前後兩半，兩半的點估計方向須一致。
+      effect: 不改變 N、不改變門檻；不一致時判決上限降為「繼續累積」並揭露。
+      caveat: 此檢查的檢定力未驗證；只用於標示 regime 不穩，不得當作額外的顯著性證據。
+  window_requirement:
+    both_windows_must_include_full_bear: true
+    reuse_gate: gate.sample_period
+  violation: 任一 condition 不成立 → 該批 L1 篩選追溯改記 selection，N += S。
+  not_guaranteed:
+    - 探索窗與封存窗同屬一個市場 regime 時，兩窗並非獨立：embargo 只處理自相關與標籤重疊，不處理 regime 相依。確認通過不代表跨 regime 穩健。
+    - 候選庫本身若是看過封存窗期間資料後才設計的，lb.unread 在實質上已被破壞。
+    - K 很小並不使「從 S 個裡挑 K」的選擇偏誤消失，只是把它隔離在探索窗；探索窗內的績效數字永遠不是證據。
+
+
+# ---------------------------------------------------------------------------
+# 五、gates 槽位：最小樣本閘門
+#
+# 規範 §五 全域門檻速查。全部讀 n_eff，不是列數。
+# 未達門檻不是「不顯著」，是「不得宣稱」——兩者在報告裡必須寫成不同的話。
+# ---------------------------------------------------------------------------
+gates:
+  - id: gate.win_rate
+    when: {estimand: win_rate}
+    min_n_eff: 30
+    on_fail: 不得宣稱勝率
+    why: 30 筆以下的 70% 勝率與丟銅板無法區分。
+
+  - id: gate.rule_system_trades
+    when: {estimand: [mean_return, drawdown], design: one_sample, unit: trade}
+    min_n_eff: 30
+    on_fail: 不進統計，只能標注觀察中
+    why: 中央極限的起碼要求。規範 §三 D 類。
+
+  - id: gate.event_study_verdict
+    when: {estimand: mean_return, unit: event}
+    min_n_eff: 250
+    soft_floor: 50
+    on_fail: n < 50 只報方向不下結論；50 <= n < 250 得出方向性結論但不得判決
+    why: 規範 §三 B 類的既有慣例。
+
+  - id: gate.ic_tradability_reference
+    when: {estimand: rank_ic}
+    reference_line: {abs_ic: 0.03, ic_ir: 0.3}
+    on_fail: 標為不可交易參考線以下，仍須過成本關才談判決
+    why: 歷史教訓——IC 0.018 的排序訊號確實存在，但扣成本後什麼都不剩。
+
+  - id: gate.sample_period
+    when: {estimand: any}
+    requirement: 樣本期至少含一次完整空頭
+    on_fail: 判決降級為繼續累積
+    why: 規範 §五；逐年劇烈波動的教訓（2022、2024-2025）。
+
+
+# ---------------------------------------------------------------------------
+# 六、報告的揭露義務（規範 §六）
+#
+# 缺任何一項的報告視為未完成，不得作為決策依據。resolver 會把這份清單寫進
+# 處方的 must_report，讓「有沒有揭露」變成可機械檢查的。
+# ---------------------------------------------------------------------------
+disclosure_required:
+  - 假說與登記時間（未事前登記者標注「探索性」）
+  - 每個點估計旁的 t 值與樣本數 n_eff
+  - 本輪嘗試過的參數與變體總數 N，包含失敗的
+  - 【1.2】若使用 lockbox：篩選總數 S、晉級數 K、探索窗／封存窗邊界與 embargo
+  - 【1.2】封存窗讀取帳（每次讀取的時間、候選、結果），與已併入探索窗的區段
+  - 【1.2】lockbox 的 not_guaranteed 清單原文，不得省略
+  - 逐年與 2024-01-01 起的子區間數字
+  - 成本假設明細與成本後結果
+  - 已知限制（樣本期偏多頭、贏家集中、資料源枯竭風險等）
+  - 三選一的判決與對應的等待條件
+
+verdicts:
+  可交易:
+    condition: 主檢定過門檻，且關卡三到六全數通過
+    action: 先進每日紙上追蹤至少一季，複驗後才進小資金實盤
+    note: 統計顯著不等於直接上實盤。
+  繼續累積:
+    condition: 方向一致但樣本不足
+    action: 登記等待條件與預計時程，到期複驗；不進實盤權重
+    note: 若一算發現要等一年以上，「再等」就不是可行策略，應改列處置選項。
+  證偽:
+    condition: 任一關卡不過且無補救
+    action: 寫明證偽的機制而不只是數字
+    note: 機制寫清楚才能防止換個皮重新提案。
+
+
+# ---------------------------------------------------------------------------
+# 七、對規範原文的三處增補（extension）
+# ---------------------------------------------------------------------------
+additions:
+
+  pre_tradability:
+    origin: extension
+    what: 在關卡二之前加一道「標的可交易性」檢定（base 的 serial_structure.none）。
+    why: |
+      規範的七道關卡全都在檢定「策略」。但如果標的在這個持有期上根本與隨機漫步
+      無法區分，任何策略在它上面的顯著都是取樣運氣。這一關檢定的是標的不是策略，
+      所以不進入 N，成本也極低（不需回測），適合放在漏斗最前段。
+    n_cost: 0
+
+  best_of_m_split:
+    origin: extension
+    what: family 增設 best_of_M，與 bounded_multiple 分流。
+    why: |
+      規範 §一 關卡四把「比較多個策略變體的夏普值」交給 DSR，但沒有把它跟
+      「測了 N 組參數的單一策略」在流程上分開。兩者的正確工具不同：後者是
+      Bonferroni/HLZ 門檻，前者是 DSR 加 SPA。混用會讓 M 個策略的比較被
+      當成單一策略的多參數檢定處理，低估了選最好那個的偏差。
+
+  purpose_n_accounting:
+    origin: extension
+    what: purpose 三分法（screening / diagnostic / selection）與對應的 N 記帳。
+    why: |
+      規範要求「誠實記錄嘗試過的組合總數」，但沒有區分「為了理解反應面形狀而跑」
+      與「為了挑一個來用而跑」。若不分開，任何診斷性的探索都會推高 N，讓後續
+      所有策略的門檻上升——結果是研究者被誘導成「少做診斷」，方向完全相反。
+      隔離的代價是必須在機制上保證 diagnostic 的結果永不被選用；一旦從中挑出
+      「表現最好的」，這條防線就失效。
+    cite: PLAN-auto-research-loop.md §0.2、§7
+
+  lockbox_confirmation:
+    origin: extension
+    revision: "1.2"
+    what: screening 可使用探索窗績效；確認改在封存窗，N 計晉級數 K。
+    why: |
+      12 萬候選若全部算進同一個 N，DSR 門檻由約 2.1 升至約 4.5，現有策略預期全部
+      無法通過（fastbt 設計 §4.1）。以資料分割隔離「選擇」與「確認」可避免此膨脹，
+      但前提是分割是機制保證的，不是研究者自覺。lockbox.conditions 即該前提。
+    risk: >
+      最容易被悄悄破壞的是 lb.burn_on_read 與 lb.unread：封存窗讀過一次後仍被當作
+      乾淨資料重複使用，等同把確認變成另一輪挖掘而不計 N。
+    n_cost: "S 不計；K 計入"
+
+decisions:
+  date: "2026-11-05"
+  by: 使用者（照建議採用）
+  adopted:
+    - 封存窗至少 5 年且含完整空頭；每日增長的新資料另算新封存窗
+    - K>=6 時確認門檻取 max(3, Bonferroni z)；挑最好的那個另加 DSR(N=K)+PBO
+    - 探索窗與封存窗都須含完整空頭
+    - regime 相依接受為已知限制並強制揭露；加 lb.half_split_direction 附加檢查
+    - decision.py 增必填 window 欄位（gs-strategy 另開 PR）
+  still_open:
+    - 前置 (1)(2)(3) 全未實作
+    - K 上限 50 與 embargo 公式為判斷值，上線前用 fastbt 的純雜訊驗收（12 萬雜訊因子）檢查假陽性率
