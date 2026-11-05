@@ -2,10 +2,12 @@
 
 放「只有假說、指標或檢定計畫，還沒有進出場規則」的研究。這裡**不是策略集合**：沒有 `strategy.py`，不會被 `scripts/validate_dashboard_bundle.py` 或 runner 掃到，也不得宣稱已驗證。
 
-| 草稿 | 性質 | 狀態 | 缺口 |
+| 草稿 | 性質 | 處置 | 狀態與缺口 |
 |---|---|---|---|
-| [`fin_otc_spread_tx`](fin_otc_spread_tx/draft.json) | 金融／櫃買價差對台指期的領先假說 | 驗證設計已凍結，正式驗證未執行 | 進出場、方向、部位、成本、成交時機、盤中頻率 |
-| [`pledge_wall_00631l`](pledge_wall_00631l/draft.json) | 00631L／0050 質借斷頭價位重建 | 指標完成，策略未驗證 | 訊號門檻、進出場、下單標的（ETF）、部位、成本、成交時機 |
+| [`fin_otc_spread_tx`](fin_otc_spread_tx/draft.json) | 金融／櫃買價差對台指期的領先假說 | **留在研究區**（Jason 建議） | 開發期 9 組檢定 4 組通過但效果小；進出場、部位、成本未定；驗證組未揭盲；盤中即時指數來源未解（硬性前提）；盤中頻率超出 IR／Gslang 日頻範圍 |
+| [`pledge_wall_00631l`](pledge_wall_00631l/draft.json) | 00631L／0050 質借斷頭價位重建 | **只當風險指標，不當策略**（Jason 建議） | 無可用訊號門檻；不下單，進出場／部位／成本／成交時機皆不適用；質借成數 60% 為假設；「25%」所指待 Kevin 確認 |
+
+[`jason-reply-20261105.md`](jason-reply-20261105.md) 是 Jason 對缺口的回覆原文（2026-11-05，#gs-quant-software），兩份草稿的 `answer_zh` 皆出自此。
 
 ## 格式
 
