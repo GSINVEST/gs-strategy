@@ -7,7 +7,7 @@
 | [`fin_otc_spread_tx`](fin_otc_spread_tx/draft.json) | 金融／櫃買價差對台指期的領先假說 | **留在研究區**（Jason 建議） | 開發期 9 組檢定 4 組通過但效果小；進出場、部位、成本未定；驗證組未揭盲；盤中即時指數來源未解（硬性前提）；盤中頻率超出 Gslang 第一版與現有 runner 的日頻範圍（IR 本身能否表達盤中未驗證） |
 | [`pledge_wall_00631l`](pledge_wall_00631l/draft.json) | 00631L／0050 質借斷頭價位重建 | **只當風險指標，不當策略**（Jason 建議） | 無可用訊號門檻；不下單，進出場／部位／成本／成交時機皆不適用；質借成數 60% 為假設；「25%」所指待 Kevin 確認 |
 
-[`jason-reply-20261105.md`](jason-reply-20261105.md) 是 Jason 對缺口的回覆原文（2026-11-05，#gs-quant-software），兩份草稿的 `answer_zh` 皆出自此。
+[`jason-reply-20261105.md`](jason-reply-20261105.md) 是 Jason 對缺口的回覆原文（2026-11-05，#gs-quant-software），兩份草稿的 `answer_zh` 皆出自此。另有 [`jason-reply-2-20261105.md`](jason-reply-2-20261105.md)（試驗計數對帳：累計 70；封存窗缺口）。
 
 ## 格式
 
