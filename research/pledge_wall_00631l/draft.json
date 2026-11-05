@@ -1,0 +1,230 @@
+{
+  "draft_version": "strategy-research-draft/0.1",
+  "id": "pledge_wall_00631l",
+  "title_zh": "00631L 質借斷頭牆（風險指標：質借維持率重建與斷頭價位）",
+  "kind": "risk_indicator",
+  "provenance": {
+    "author_of_source": "Jason",
+    "extracted_on": "2026-11-05",
+    "extracted_by": "Claude（手抽，未經人審；只轉錄來源文件已寫明的內容，不補任何數字）",
+    "sources": [
+      {
+        "repo": "gs-strategy",
+        "path": "research/pledge_wall_00631l/source.html",
+        "sha256_lf": "fc49b6a94f9e6c2173db7d2fa919fb918f153808d35b170472d7778b3838d574"
+      },
+      {
+        "repo": "gs-strategy",
+        "path": "research/jason-reply-20261105.md",
+        "sha256_lf": "40a1448ff4d56be5d5233acdb8d0f6989c9cf462bc4580032171dc6c79188ff1"
+      }
+    ]
+  },
+  "source_status_zh": "指標重建完成；作者建議只當風險指標、不當策略（2026-11-05）。訊號門檻檢驗皆為未證實。",
+  "hypothesis_zh": "00631L、0050 的質借部位有估計的維持率與斷頭價位，可作為觀察槓桿部位離風險線多遠的風險指標；不是交易訊號。",
+  "instruments": [
+    {
+      "id": "00631L",
+      "role": "subject",
+      "note": "股票型 ETF（不是期貨）；2026-03-31 1 拆 22"
+    },
+    {
+      "id": "0050",
+      "role": "subject",
+      "note": "2025-06-18 1 拆 4"
+    }
+  ],
+  "data": [
+    {
+      "name": "pledge_balance",
+      "source": "證交所 TWTA1U 借貸款項擔保品餘額表（證券商不限用途款項借貸）",
+      "frequency": "1d",
+      "range": "2022-01-03 至 2026-11-04，1166 個交易日，帳務逐日對得上"
+    },
+    {
+      "name": "close",
+      "source": "quantdata（FinMind 與 TEJ 重疊期逐筆一致）",
+      "frequency": "1d",
+      "range": "同上，已處理分割"
+    }
+  ],
+  "reconstruction": {
+    "assumptions": {
+      "loan_ratio": 0.6,
+      "margin_call_threshold": 1.3,
+      "note": "借款金額由每日新增張數、當日收盤價與 60% 成數推算；證交所不公布金額，所有維持率與斷頭價皆為估計值。"
+    },
+    "snapshot_2026_11_04": {
+      "00631L": {
+        "close": 30.85,
+        "pledge_lots": 447747,
+        "est_avg_liquidation_price": 25.06,
+        "pct_below_130": 0.073,
+        "first_10pct_trigger": 30.41,
+        "p25_trigger": 28.97
+      },
+      "0050": {
+        "close": 99.85,
+        "pledge_lots": 552305,
+        "est_avg_liquidation_price": 69.71,
+        "pct_below_130": 0.0,
+        "first_10pct_trigger": 85.53,
+        "p25_trigger": 83.03
+      }
+    },
+    "methods": {
+      "single_point_22pct": "假設所有人借滿 6 成且在同一價位借款：起始維持率 1÷0.6=166.7%、追繳門檻 130%，價格下跌 1.3×0.6−1=−22% 觸發。",
+      "per_batch": "把每天新增的質借部位按當天價格分批，各批用自己的進場價算觸發價。11/04 平均斷頭距離 −18.8%（11/03 為 −20.3%）。『前 25% 部位觸發價』是此法中的另一指標，與 22% 不同。",
+      "loan_ratio_backsolve": "以 11/03 的重建成本，要讓平均斷頭距離剛好 −22%，成數約 58.7%；成數每差 5 個百分點，斷頭牆移動 6～9 個百分點。",
+      "caveat": "兩種算法都建立在成數 6 成的假設上；『追繳 130%、補繳 2 個營業日、T+3 處分』來自新聞轉述，未查到法規原文；證交所 TWTA1U 只有張數，沒有借款金額與成數；查到的 ETF 成數公告是融資、不是質借。"
+    }
+  },
+  "findings_zh": [
+    "跌破 130% 之後沒有看到集中賣出：2025-04 關稅崩跌時模型估計 87% 部位破線，但每日減少量只有餘額的 1～8%、以現償為主；全期間破線日與平常日無差別。",
+    "可能原因（未驗證）：實際成數低於 60%，或被追繳時補擔保品而非被處分。",
+    "歷史大跌事件只有 2022-10、2024-08、2025-04 三次，當時 00631L 質借規模 20～30 億，現在約 138 億、多數是 2026 年才進來。",
+    "同算法 11/03 重建為 −20.3%，對照對方說的 −22%，接近但尚不能說已還原對方算法。",
+    "『破線占比』（價格低於觸發價的部位占比）與『平均距離斷頭』作為訊號門檻都檢驗過，結果皆為未證實。",
+    "在 00631L 以外的 7 檔台股槓桿與反向 ETF 上檢驗『破線占比高時，隔天融資是否減少較多』：顯著反向（β = −9.9），留一事件與敏感度測試方向一致（Jason 回報）。",
+    "『距斷頭多遠』對未來報酬沒有預測力。"
+  ],
+  "validation_plan": {
+    "steps_zh": [
+      "成數敏感度 40%／50%／60%，找最接近 −22% 的設定",
+      "把『新增』拆成補擔保與新借款",
+      "事件研究：2022-10、2024-08、2025-04、2026-10，後續 5／10／20 日報酬",
+      "訊號檢定：毛報酬、Newey-West 標準誤",
+      "策略與程式獨立稽核（只送程式與報告）"
+    ],
+    "decision_rule_zh": "多個獨立事件方向一致才往策略推；否則寫成『沒有訊號』。",
+    "executed": false
+  },
+  "unconfirmed_hints": [
+    {
+      "text_zh": "斷頭的時機是 25%，用股票質借的點去算",
+      "source": "Slack 訊息截圖（Kevin 017 → Jason），未見於進度文件",
+      "status": "已確認（Kevin，2026-11-05，憑記憶）：當時討論的是 22%，即單點算法（所有人借滿 6 成、同一價位借款，−22% 觸發）；『前 25% 部位觸發價』是另一個指標，與截圖討論無關。",
+      "resolved": true
+    }
+  ],
+  "gaps": [
+    {
+      "id": "G_SIGNAL_RULE",
+      "field": "訊號定義",
+      "reason": "文件只有斷頭價位分布，沒有『離牆多近算訊號』的門檻。",
+      "needed_for": [
+        "ir.transitions",
+        "tla",
+        "backtest"
+      ],
+      "owner": "人",
+      "status": "answered",
+      "answer_zh": "沒有可用的門檻：『破線占比』與『平均距離斷頭』都檢驗過，結果為未證實。"
+    },
+    {
+      "id": "G_ENTRY_EXIT",
+      "field": "進出場規則與方向",
+      "reason": "靠近斷頭牆時做多、做空或僅當風險指標未定。",
+      "needed_for": [
+        "ir.transitions",
+        "tla",
+        "backtest"
+      ],
+      "owner": "人",
+      "status": "not_applicable",
+      "answer_zh": "只當風險指標，不做多也不做空、不下單；台指期沒有評估過。"
+    },
+    {
+      "id": "G_TRADED_INSTRUMENT",
+      "field": "下單標的",
+      "reason": "00631L／0050 是股票型 ETF，現有 IR 與策略契約以期貨為主；實際用現貨、台指期或其他未定。",
+      "needed_for": [
+        "ir.instruments",
+        "backtest"
+      ],
+      "owner": "人",
+      "kind": "framework_limit",
+      "status": "not_applicable",
+      "answer_zh": "只當風險指標，不做多也不做空、不下單；台指期沒有評估過。"
+    },
+    {
+      "id": "G_SIZE",
+      "field": "部位大小與上限",
+      "reason": "文件未載明。",
+      "needed_for": [
+        "ir.variables.range",
+        "tla",
+        "backtest"
+      ],
+      "owner": "人",
+      "status": "not_applicable",
+      "answer_zh": "只當風險指標，不做多也不做空、不下單；台指期沒有評估過。"
+    },
+    {
+      "id": "G_COST",
+      "field": "成本與滑價",
+      "reason": "文件未載明。",
+      "needed_for": [
+        "ir.costs",
+        "backtest"
+      ],
+      "owner": "人",
+      "status": "not_applicable",
+      "answer_zh": "只當風險指標，不做多也不做空、不下單；台指期沒有評估過。"
+    },
+    {
+      "id": "G_FILL_TIMING",
+      "field": "成交時機",
+      "reason": "文件未載明，且 zipline-tej 日頻成交行為尚未實測。",
+      "needed_for": [
+        "ir.time.fill_timing",
+        "backtest"
+      ],
+      "owner": "人",
+      "status": "not_applicable",
+      "answer_zh": "只當風險指標，不做多也不做空、不下單；台指期沒有評估過。"
+    },
+    {
+      "id": "G_LOAN_RATIO",
+      "field": "實際質借成數",
+      "reason": "60% 為假設，實際值公開資料沒有；影響所有斷頭價。",
+      "needed_for": [
+        "signal_validity"
+      ],
+      "owner": "人",
+      "status": "answered",
+      "answer_zh": "沒有更準的來源，60% 是假設；反推成數約 58.7%（使平均斷頭距離為 −22%）。"
+    },
+    {
+      "id": "G_STAT_GATE",
+      "field": "事件研究與訊號檢定結果",
+      "reason": "尚未執行。",
+      "needed_for": [
+        "promotion"
+      ],
+      "owner": "人",
+      "status": "answered",
+      "answer_zh": "訊號檢定未證實；跨 ETF 檢定顯示破線占比高時隔天融資減少較多（β = −9.9）。未做策略層級的晉升判定。"
+    }
+  ],
+  "ir_status": {
+    "extractable": false,
+    "reason": "not_a_strategy",
+    "target_ir": "strategy-fsm-ir/0.1.1",
+    "blocked_by": [],
+    "note_zh": "作者建議只當風險指標、不下單，沒有倉位轉換可抽成 IR。若日後要作為風險指標接入 StratyUI／面板，另案設計指標格式。"
+  },
+  "out_of_scope": [
+    "斷頭價位是否為真實價位（金額與成數是推算）",
+    "指標有沒有預測力",
+    "規模變化（20～30 億→138 億）後歷史事件是否仍適用"
+  ],
+  "disposition": {
+    "value": "risk_indicator_only",
+    "by": "Jason 建議（2026-11-05）；待 Kevin 確認",
+    "reason_zh": "沒有可用的訊號門檻；『距斷頭多遠』對未來報酬無預測力；做多（破線後反彈）版本需用事後才知道的峰值日，無法操作。不做多也不做空、不下單。"
+  },
+  "separate_work_not_merged": [
+    "0050 與 00631L 依波動調整曝險的描述性評估：最大回檔降低、Sharpe 沒有改善。屬風險覆蓋，與本指標的訊號無關，作者要求不要併入。"
+  ]
+}

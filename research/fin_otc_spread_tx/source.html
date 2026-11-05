@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>:root{color-scheme:light}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>金櫃價差策略進度</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<style>
+/* 版面：單欄報告，最上方放結論與四個狀態，其後依「想法、已完成、發現、驗證計畫、風險、決策」排列 */
+:root{
+  --bg:#f6f7f8; --surface:#ffffff; --ink:#1d2327; --ink2:#4a555c; --muted:#76818a; --line:#dde2e6;
+  --accent:#1f5f7a; --accent-soft:#e3eef3;
+  --ok:#2c7a4b; --ok-soft:#e1f1e8; --wait:#a35f00; --wait-soft:#fbeed8; --stop:#a63a3a; --stop-soft:#f7e3e3;
+  --font:"Noto Sans TC","Microsoft JhengHei","PingFang TC",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#14191c; --surface:#1c2327; --ink:#e8ecee; --ink2:#b6c0c6; --muted:#8a959c; --line:#2e383d;
+    --accent:#7fbad3; --accent-soft:#1d3440;
+    --ok:#6cc58f; --ok-soft:#1b3326; --wait:#e0a24c; --wait-soft:#38290f; --stop:#e08a8a; --stop-soft:#3b2020;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14191c; --surface:#1c2327; --ink:#e8ecee; --ink2:#b6c0c6; --muted:#8a959c; --line:#2e383d;
+  --accent:#7fbad3; --accent-soft:#1d3440;
+  --ok:#6cc58f; --ok-soft:#1b3326; --wait:#e0a24c; --wait-soft:#38290f; --stop:#e08a8a; --stop-soft:#3b2020;
+  color-scheme:dark;
+}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.7;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 56px}
+.wrap{max-width:880px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
+h1{font-size:26px;line-height:1.35;margin:0;text-wrap:balance}
+h2{font-size:18px;margin:0 0 10px;text-wrap:balance}
+p{margin:0 0 10px}
+.meta{color:var(--muted);font-size:13px;margin-top:6px}
+.lead{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px 20px}
+.lead ul{margin:8px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:6px}
+.lead strong{color:var(--accent)}
+.status{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+.st{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;min-width:0}
+.st .k{font-size:12px;color:var(--muted);letter-spacing:.04em}
+.st .v{font-size:16px;font-weight:700;margin-top:2px}
+.st .d{font-size:12.5px;color:var(--ink2);margin-top:2px}
+.pill{display:inline-block;font-size:12px;font-weight:700;padding:1px 9px;border-radius:99px;white-space:nowrap}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}
+.pill.wait{background:var(--wait-soft);color:var(--wait)}
+.pill.stop{background:var(--stop-soft);color:var(--stop)}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:520px;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top;font-size:14px}
+th{font-size:12.5px;color:var(--muted);font-weight:500;background:var(--bg)}
+tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right;white-space:nowrap}
+.note{font-size:13px;color:var(--ink2);margin-top:8px}
+.callout{border-left:3px solid var(--wait);background:var(--wait-soft);padding:10px 14px;border-radius:0 8px 8px 0;font-size:14px}
+ol.decide{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:8px}
+footer{font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:14px}
+@media (max-width:480px){h1{font-size:22px}}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>金融與櫃買指數「翹翹板」策略　進度報告</h1>
+    <div class="meta">2026-11-05　｜　研究性質，尚無可交易結論</div>
+  </header>
+
+  <section class="lead">
+    <h2>一句話結論</h2>
+    <ul>
+      <li>資料已備齊，驗證方法已事先寫定並凍結，<strong>但正式驗證還沒有執行，目前沒有策略結論。</strong></li>
+      <li>一年的初步觀察顯示，金融與櫃買的價差<strong>和大盤同步變動</strong>，但<strong>還不能證明能預測</strong>台指期。最強的一組統計值 t = −2.63，未達內部門檻 3。</li>
+      <li>原本設想的「配對交易（價差偏離後賭收斂）」在這一年的資料中<strong>沒有得到支持</strong>。</li>
+    </ul>
+  </section>
+
+  <section class="status" aria-label="目前狀態">
+    <div class="st"><div class="k">資料</div><div class="v"><span class="pill ok">完成</span></div><div class="d">2020-01 至 2026-11，1,660 個交易日，逐日檢查無缺漏</div></div>
+    <div class="st"><div class="k">驗證設計</div><div class="v"><span class="pill ok">已凍結</span></div><div class="d">看資料之前先寫定假設與判定標準</div></div>
+    <div class="st"><div class="k">正式驗證</div><div class="v"><span class="pill wait">未執行</span></div><div class="d">待核准後先跑開發組</div></div>
+    <div class="st"><div class="k">策略結論</div><div class="v"><span class="pill stop">尚無</span></div><div class="d">驗證完成前不下結論</div></div>
+  </section>
+
+  <section>
+    <h2>一、研究想法</h2>
+    <p>盤中金融股與上櫃（櫃買）指數常出現資金拉扯：資金躲進金融股、離開上櫃小型股，通常代表市場轉弱。想確認兩件事：</p>
+    <p>① 金融與櫃買的價差，能不能當作<strong>台指期的領先訊號</strong>；② 兩者的價差能不能做<strong>配對交易</strong>。</p>
+    <p>台指期流動性很好，日成交約 4.6 萬口，作為交易標的沒有問題。</p>
+  </section>
+
+  <section>
+    <h2>二、已完成的工作</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>項目</th><th>內容</th><th>狀態</th></tr></thead>
+      <tbody>
+        <tr><td>資料來源確認</td><td>內部資料庫與凱基 API 都沒有盤中指數；改用證交所與櫃買中心公開的「每 5 秒指數」，自行合成 1 分 K</td><td><span class="pill ok">完成</span></td></tr>
+        <tr><td>歷史資料下載</td><td>1,660 個交易日，兩個來源皆完整，參考價與前一日收盤逐日吻合</td><td><span class="pill ok">完成</span></td></tr>
+        <tr><td>疊圖檢視器</td><td>金融與櫃買 1 分／5 分 K 疊圖、價差、滾動相關，可逐日切換，並有「拉扯排行」</td><td><span class="pill ok">完成</span></td></tr>
+        <tr><td>初步探索</td><td>用最近一年（242 天）看相關、價差性質與預測力</td><td><span class="pill ok">完成</span></td></tr>
+        <tr><td>驗證規格</td><td>假設、9 組檢定、樣本切分、通過標準，已在看到驗證期結果前凍結</td><td><span class="pill ok">完成</span></td></tr>
+        <tr><td>正式驗證程式與稽核登記</td><td>程式、試驗次數帳本、樣本保護登記都已就位</td><td><span class="pill ok">完成</span></td></tr>
+        <tr><td>正式驗證</td><td>開發組 925 天，之後驗證組 444 天</td><td><span class="pill wait">待核准</span></td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>三、初步發現（僅最近一年，只供參考）</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>觀察</th><th class="num">數字</th><th>白話解讀</th></tr></thead>
+      <tbody>
+        <tr><td>金融與櫃買的相關係數</td><td class="num">0.10～0.16<br>（日報酬 0.33）</td><td>連動很低，兩者大致各走各的</td></tr>
+        <tr><td>價差與同期台指期的相關</td><td class="num">−0.39</td><td>金融相對強、櫃買相對弱時，台指期當下多半在跌。可以用來判讀盤勢</td></tr>
+        <tr><td>價差能否預測台指期</td><td class="num">34 種組合<br>最強 t = −2.63</td><td>方向一致（價差擴大，之後偏弱），但沒有一組達到門檻 3，只能說有跡象</td></tr>
+        <tr><td>價差是否會拉回（配對交易前提）</td><td class="num">盤中 1.1～1.4<br>日頻 1.0～1.4</td><td>盤中價差傾向<strong>繼續擴大</strong>，跨日也沒有拉回，配對交易的前提不成立</td></tr>
+        <tr><td>電子與金融價差（對照）</td><td class="num">t：2.41 → 1.07</td><td>資料加長後效果消失，判定為雜訊</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">t 值是統計顯著程度，內部門檻為 3。探索期間共試了 34 種組合，其中看起來最強的一組在樣本外通常會縮水，所以只當作提出假設的依據。價差擴大最多的時段，台指期之後 30 分鐘平均少約 8 個基點（−5.4 對 +2.6），這是未扣成本的樣本內數字。</p>
+  </section>
+
+  <section>
+    <h2>四、驗證計畫</h2>
+    <p>為避免「看了資料再挑結果」，假設、組合與通過條件已先寫定。共 9 組（過去 5／15／30 分鐘的價差變化，對應之後 5／15／30 分鐘的台指期報酬），累計試驗 43 次，其中 34 次來自探索。</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>樣本</th><th>期間</th><th class="num">天數</th><th>用途</th></tr></thead>
+      <tbody>
+        <tr><td>開發組</td><td>2020-03-23～2023-12-31</td><td class="num">925</td><td>正式判定。通過條件：方向為負、t ≤ −3，且勝過隨機對照</td></tr>
+        <tr><td>驗證組</td><td>2024-01-01～2025-11-03</td><td class="num">444</td><td>只對開發組通過的組合驗證一次，結果照實登錄</td></tr>
+        <tr><td>已看過</td><td>2025-11-04～2026-11-04</td><td class="num">242</td><td>探索期間用過，只作描述</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">結論只有三種：通過、無效、未證實。若樣本不足以判定，只能寫「未證實」，不能寫「無效」。2020-03 台股改為逐筆交易，之前 2.5 個月不納入開發組。</p>
+  </section>
+
+  <section>
+    <h2>五、風險與限制</h2>
+    <div class="callout">就算統計上通過，離能賺錢還有一段距離。</div>
+    <ul style="margin:12px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:6px">
+      <li><strong>幅度可能不夠付成本。</strong>預測力若存在，每次的預期報酬也很小，須另做成本與滑價檢驗。</li>
+      <li><strong>櫃買端沒有可交易的期貨。</strong>櫃買期與富櫃 200 期幾乎沒有成交，只能把櫃買當訊號、用台指期下單。</li>
+      <li><strong>市況單一。</strong>探索那一年是 AI 多頭行情，台積電主導，結論未必適用其他市況。</li>
+      <li><strong>歷史長度。</strong>櫃買盤中指數最早只到 2014 年，目前只抓到 2020 年。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>六、下一步與需要決定的事</h2>
+    <ol class="decide">
+      <li><strong>是否執行開發組正式驗證。</strong>預計當天可完成，完成後先回報，不會自動進入驗證組。</li>
+      <li><strong>驗證組是否揭盲。</strong>只能做一次，用過就不能再當乾淨的樣本外。須主管或研究負責人確認後才做。</li>
+      <li><strong>若通過：</strong>另寫規格處理交易規則、成本、滑價與容量，再決定是否進入前瞻追蹤。</li>
+      <li><strong>是否另外檢驗跨日配對交易。</strong>一年資料不支持，但現在有 6 年多資料可重測。這是新假設，會另立規格並計入試驗次數。</li>
+    </ol>
+  </section>
+
+  <footer>
+    資料來源：證交所 MI_5MINS_INDEX（金融保險類）、櫃買中心每 5 秒盤後統計（櫃買指數）、內部資料庫台指期近月 1 分 K。
+    全部為研究用途，不涉及實盤資金；上線前須另行明確核准。
+  </footer>
+</div>
+
+</body>
+</html>
