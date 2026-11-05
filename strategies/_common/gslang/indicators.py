@@ -35,6 +35,12 @@ class CubicOut(NamedTuple):
     score: float
 
 
+class BollOut(NamedTuple):
+    mid: float
+    upper: float
+    lower: float
+
+
 @dataclass(frozen=True)
 class IndicatorSpec:
     name: str
@@ -47,6 +53,7 @@ class IndicatorSpec:
     source: str
     _history: Callable[..., int]
     _compute: Callable[..., Any]
+    keeps_nan: bool = False   # True：_compute 收原始序列（不丟 NaN），給「當根缺值就不是現價」的指標
 
     @property
     def key(self) -> str:
@@ -71,7 +78,7 @@ class IndicatorSpec:
         arr = np.asarray(closes, dtype=float)
         if arr.ndim != 1:
             raise IndicatorError(f"{self.key} 的輸入必須是一維收盤價序列")
-        return self._compute(arr[~np.isnan(arr)], **params)
+        return self._compute(arr if self.keeps_nan else arr[~np.isnan(arr)], **params)
 
 
 def _pos_int(name: str, v: Any, minimum: int = 1) -> int:
@@ -184,6 +191,111 @@ def _sma_compute(closes: np.ndarray, window: int):
 
 
 # ---------------------------------------------------------------------------
+# G1b —— EMA@1／RSI@1（無限記憶）、BOLL@1／DONCHIAN_*／CLOSE（有限窗口）
+#
+# 歷史長度慣例（2026-11-05 決定：固定 10 倍窗口）：
+#   EMA、RSI 的遞迴會讓結果取決於餵了多少歷史。慣例是**只用丟 NaN 後最近 10*window 根**，
+#   不足 10*window 根即 NO_SIGNAL。結果因此只取決於參數與這 10*window 根，與資料庫總長度
+#   無關（測試強制 prefix 獨立）。代價：與用全部歷史的外部軟體數值有小差異（種子的影響在
+#   10 倍窗口後已大幅衰減但不為零）；與外部軟體對帳時須知道這一點。
+# ---------------------------------------------------------------------------
+
+MEMORY_FACTOR = 10
+
+
+def _mem_history(window: int) -> int:
+    _pos_int("window", window)
+    return MEMORY_FACTOR * window + 5
+
+
+def _mem_tail(closes: np.ndarray, window: int):
+    n = MEMORY_FACTOR * window
+    return closes[-n:] if len(closes) >= n else None
+
+
+def _ema_core(vals: np.ndarray, w: int) -> float:
+    a = 2.0 / (w + 1)
+    e = float(np.mean(vals[:w]))
+    for v in vals[w:]:
+        e = e + a * (float(v) - e)
+    return e
+
+
+def _ema_compute(closes: np.ndarray, window: int):
+    _pos_int("window", window)
+    tail = _mem_tail(closes, window)
+    return None if tail is None else _ema_core(tail, window)
+
+
+def _rsi_core(vals: np.ndarray, w: int) -> float:
+    d = np.diff(vals)
+    g = np.where(d > 0, d, 0.0)
+    l = np.where(d < 0, -d, 0.0)
+    ag, al = float(np.mean(g[:w])), float(np.mean(l[:w]))
+    for i in range(w, len(d)):
+        ag = (ag * (w - 1) + float(g[i])) / w
+        al = (al * (w - 1) + float(l[i])) / w
+    if al == 0:
+        return 50.0 if ag == 0 else 100.0     # 全平＝無資訊；只漲＝100
+    return 100.0 - 100.0 / (1.0 + ag / al)
+
+
+def _rsi_compute(closes: np.ndarray, window: int):
+    _pos_int("window", window)
+    tail = _mem_tail(closes, window)
+    return None if tail is None else _rsi_core(tail, window)
+
+
+def _boll_history(window: int, k: float) -> int:
+    _pos_int("window", window, 2)
+    return window + 5
+
+
+def _boll_compute(closes: np.ndarray, window: int, k: float):
+    _pos_int("window", window, 2)
+    if isinstance(k, bool) or not isinstance(k, (int, float)) or not k > 0:
+        raise IndicatorError(f"參數 k 必須是 > 0 的數，收到 {k!r}")
+    tail = closes[-window:]
+    if len(tail) < window:
+        return None
+    mid = float(np.mean(tail))
+    sd = float(np.std(tail, ddof=0))          # 母體標準差（Bollinger 慣例）
+    return BollOut(mid=mid, upper=mid + k * sd, lower=mid - k * sd)
+
+
+def _donchian_history(window: int) -> int:
+    _pos_int("window", window)
+    return window + 6
+
+
+def _donchian_prev(closes: np.ndarray, window: int):
+    _pos_int("window", window)
+    if len(closes) < window + 1:
+        return None
+    return closes[-window - 1:-1]             # 不含決策當根
+
+
+def _donchian_high(closes: np.ndarray, window: int):
+    prev = _donchian_prev(closes, window)
+    return None if prev is None else float(np.max(prev))
+
+
+def _donchian_low(closes: np.ndarray, window: int):
+    prev = _donchian_prev(closes, window)
+    return None if prev is None else float(np.min(prev))
+
+
+def _close_history() -> int:
+    return 5
+
+
+def _close_compute(raw: np.ndarray):
+    if len(raw) == 0 or np.isnan(raw[-1]):
+        return None                            # 當根缺值不得拿前一根頂替
+    return float(raw[-1])
+
+
+# ---------------------------------------------------------------------------
 # 註冊表
 # ---------------------------------------------------------------------------
 
@@ -217,6 +329,62 @@ _SPECS = [
         no_signal="丟 NaN 後不足 window 根",
         source="G1a 新增；無對應舊策略，測試對獨立純 Python 參考實作",
         _history=_sma_history, _compute=_sma_compute,
+    ),
+    IndicatorSpec(
+        name="EMA", version=1, params=("window",),
+        formula="alpha = 2/(window+1)；種子 = 窗內前 window 根平均；其後 e = e + alpha*(x - e)。只用最近 10*window 根。",
+        inputs="收盤價",
+        window_semantics="丟 NaN 後最近 10*window 根（固定 10 倍窗口慣例）；歷史備 10*window+5 根",
+        no_signal="丟 NaN 後不足 10*window 根",
+        source="G1b 新增；無對應舊策略，測試對獨立純 Python 參考實作＋手算值＋prefix 獨立性",
+        _history=_mem_history, _compute=_ema_compute,
+    ),
+    IndicatorSpec(
+        name="RSI", version=1, params=("window",),
+        formula=("Wilder RSI。diffs 取最近 10*window 根的一階差；avg_gain／avg_loss 種子 = 前 window 個 diffs 的平均，"
+                 "其後 avg = (avg*(window-1) + x)/window；RSI = 100 - 100/(1 + avg_gain/avg_loss)；"
+                 "avg_loss=0 時：avg_gain=0 → 50（無資訊），否則 100。"),
+        inputs="收盤價",
+        window_semantics="丟 NaN 後最近 10*window 根（固定 10 倍窗口慣例）；歷史備 10*window+5 根",
+        no_signal="丟 NaN 後不足 10*window 根",
+        source="G1b 新增；Wilder (1978) 平滑；測試對獨立參考實作＋手算值＋prefix 獨立性",
+        _history=_mem_history, _compute=_rsi_compute,
+    ),
+    IndicatorSpec(
+        name="BOLL", version=1, params=("window", "k"),
+        formula="mid = 最後 window 根平均；sd = 母體標準差(ddof=0)；upper = mid + k*sd；lower = mid - k*sd。回傳 (mid, upper, lower)。",
+        inputs="收盤價",
+        window_semantics="最後 window 根（含決策當根）；歷史備 window+5 根後丟 NaN",
+        no_signal="丟 NaN 後不足 window 根",
+        source="G1b 新增；Bollinger 慣例用母體標準差；測試對獨立參考實作＋教科書例（母體 sd=2）",
+        _history=_boll_history, _compute=_boll_compute,
+    ),
+    IndicatorSpec(
+        name="DONCHIAN_HIGH", version=1, params=("window",),
+        formula="決策當根**之前**最近 window 根收盤價的最大值（不含當根，故當根創新高時才看得出突破）。",
+        inputs="收盤價",
+        window_semantics="當根之前的 window 根；歷史備 window+6 根後丟 NaN",
+        no_signal="丟 NaN 後不足 window+1 根",
+        source="G1b 新增；收盤價通道（非盤中高低點）",
+        _history=_donchian_history, _compute=_donchian_high,
+    ),
+    IndicatorSpec(
+        name="DONCHIAN_LOW", version=1, params=("window",),
+        formula="決策當根之前最近 window 根收盤價的最小值（不含當根）。",
+        inputs="收盤價",
+        window_semantics="當根之前的 window 根；歷史備 window+6 根後丟 NaN",
+        no_signal="丟 NaN 後不足 window+1 根",
+        source="G1b 新增；收盤價通道（非盤中高低點）",
+        _history=_donchian_history, _compute=_donchian_low,
+    ),
+    IndicatorSpec(
+        name="CLOSE", version=1, params=(),
+        formula="決策當根的收盤價。",
+        inputs="收盤價",
+        window_semantics="只看最後一根；歷史備 5 根（餘裕，無作用）",
+        no_signal="當根缺值（NaN）或沒有資料；**不會**往回找前一根有效值",
+        source="G1b 新增；給『收盤 > 通道上緣』這類規則的現價參照",
+        _history=_close_history, _compute=_close_compute, keeps_nan=True,
     ),
 ]
 
