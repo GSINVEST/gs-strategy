@@ -1,0 +1,195 @@
+{
+  "draft_version": "strategy-research-draft/0.1",
+  "id": "fin_otc_spread_tx",
+  "title_zh": "金融與櫃買指數價差（翹翹板）對台指期的領先訊號",
+  "kind": "research_hypothesis",
+  "provenance": {
+    "author_of_source": "Jason",
+    "extracted_on": "2026-11-05",
+    "extracted_by": "Claude（手抽，未經人審；只轉錄來源文件已寫明的內容，不補任何數字）",
+    "sources": [
+      {
+        "repo": "gs-strategy",
+        "path": "research/fin_otc_spread_tx/source.html",
+        "sha256_lf": "5d77d8b3b956d7080fc5fe062c7799f96d648dcb80bb6b21f2c687a4a5a823d0"
+      }
+    ]
+  },
+  "source_status_zh": "資料完成、驗證設計已凍結、正式驗證未執行；尚無策略結論。",
+  "hypothesis_zh": "金融指數與櫃買指數的盤中價差（過去 5／15／30 分鐘的變化）對之後 5／15／30 分鐘的台指期報酬有負向預測力；價差擴大（金融相對強、櫃買相對弱）之後台指期偏弱。櫃買端沒有可交易期貨，櫃買只當訊號、用台指期下單。",
+  "instruments": [
+    {
+      "id": "TX",
+      "role": "traded",
+      "note": "台指期近月，日成交約 4.6 萬口"
+    },
+    {
+      "id": "TWSE_FIN_INDEX",
+      "role": "signal",
+      "note": "證交所 MI_5MINS_INDEX（金融保險類），每 5 秒"
+    },
+    {
+      "id": "TPEX_INDEX",
+      "role": "signal",
+      "note": "櫃買中心每 5 秒盤後統計（櫃買指數）"
+    }
+  ],
+  "data": [
+    {
+      "name": "fin_index_1m",
+      "source": "證交所每 5 秒指數合成 1 分 K",
+      "frequency": "1m",
+      "range": "2020-01 至 2026-11，1660 個交易日"
+    },
+    {
+      "name": "otc_index_1m",
+      "source": "櫃買中心每 5 秒指數合成 1 分 K",
+      "frequency": "1m",
+      "range": "同上"
+    },
+    {
+      "name": "tx_1m",
+      "source": "內部資料庫台指期近月 1 分 K",
+      "frequency": "1m",
+      "range": "未於文件載明"
+    }
+  ],
+  "validation_plan": {
+    "tests": 9,
+    "test_grid_zh": "價差過去變化窗 {5,15,30} 分 × 台指期之後報酬窗 {5,15,30} 分",
+    "pass_criteria_zh": "方向為負、t ≤ −3、且勝過隨機對照",
+    "outcomes": [
+      "通過",
+      "無效",
+      "未證實"
+    ],
+    "splits": [
+      {
+        "name": "development",
+        "from": "2020-03-23",
+        "to": "2023-12-31",
+        "days": 925,
+        "use": "正式判定"
+      },
+      {
+        "name": "validation",
+        "from": "2024-01-01",
+        "to": "2025-11-03",
+        "days": 444,
+        "use": "只對開發組通過者驗證一次，揭盲須主管或研究負責人確認"
+      },
+      {
+        "name": "seen",
+        "from": "2025-11-04",
+        "to": "2026-11-04",
+        "days": 242,
+        "use": "探索期已用過，只作描述"
+      }
+    ],
+    "executed": false
+  },
+  "stat_ledger": {
+    "trials_total": 43,
+    "trials_exploration": 34,
+    "source": "來源文件第四節"
+  },
+  "findings_zh": [
+    "最近一年（242 天）：價差與同期台指期相關 −0.39；34 種組合最強 t = −2.63，未達門檻 3，只能說有跡象。",
+    "盤中價差傾向繼續擴大、跨日也沒有拉回：配對交易（價差收斂）前提在這一年資料中不成立。",
+    "電子與金融價差（對照）t 由 2.41 降到 1.07，判為雜訊。",
+    "以上為未扣成本的樣本內數字，且 34 組中挑出最強者，樣本外通常縮水，只作提出假設的依據。"
+  ],
+  "gaps": [
+    {
+      "id": "G_ENTRY_EXIT",
+      "field": "進出場規則",
+      "reason": "來源只有預測力檢定，沒有『價差到多少進場、持有多久、何時出場』。",
+      "needed_for": [
+        "ir.transitions",
+        "tla",
+        "backtest"
+      ],
+      "owner": "人"
+    },
+    {
+      "id": "G_DIRECTION_MAP",
+      "field": "訊號到部位方向的對映",
+      "reason": "假說方向為價差擴大偏空，但是否做空、做多、僅避險未定。",
+      "needed_for": [
+        "ir.transitions",
+        "backtest"
+      ],
+      "owner": "人"
+    },
+    {
+      "id": "G_SIZE",
+      "field": "部位大小與口數上限",
+      "reason": "文件未載明。",
+      "needed_for": [
+        "ir.variables.range",
+        "tla",
+        "backtest"
+      ],
+      "owner": "人"
+    },
+    {
+      "id": "G_COST",
+      "field": "手續費與滑價",
+      "reason": "文件明寫須另做成本與滑價檢驗，幅度可能不夠付成本。",
+      "needed_for": [
+        "ir.costs",
+        "backtest"
+      ],
+      "owner": "人"
+    },
+    {
+      "id": "G_FILL_TIMING",
+      "field": "成交時機",
+      "reason": "盤中 1 分 K 的成交假設未定；且 zipline-tej 日頻成交行為尚未實測。",
+      "needed_for": [
+        "ir.time.fill_timing",
+        "backtest"
+      ],
+      "owner": "人"
+    },
+    {
+      "id": "G_INTRADAY_FREQ",
+      "field": "盤中頻率",
+      "reason": "IR 0.1.1 與 Gslang 第一版只支援日頻、一根 bar 一次決策；本策略是盤中 1 分 K。",
+      "needed_for": [
+        "ir.time",
+        "tla",
+        "backtest"
+      ],
+      "owner": "人",
+      "kind": "framework_limit"
+    },
+    {
+      "id": "G_STAT_GATE",
+      "field": "正式驗證結果",
+      "reason": "開發組驗證未執行，驗證組揭盲未核准。",
+      "needed_for": [
+        "promotion"
+      ],
+      "owner": "人"
+    }
+  ],
+  "ir_status": {
+    "extractable": false,
+    "target_ir": "strategy-fsm-ir/0.1.1",
+    "blocked_by": [
+      "G_ENTRY_EXIT",
+      "G_DIRECTION_MAP",
+      "G_SIZE",
+      "G_FILL_TIMING",
+      "G_INTRADAY_FREQ"
+    ],
+    "note_zh": "沒有轉換規則就不能抽 IR；為了通過 schema 而編造轉換等於捏造，故不產生。"
+  },
+  "out_of_scope": [
+    "價差訊號有沒有預測力（屬正式驗證與 D1 晉升閘門）",
+    "交易成本是否吃掉預期報酬",
+    "單一市況（AI 多頭）下的結論是否適用其他市況",
+    "櫃買端期貨（櫃買期、富櫃 200 期）沒有成交，不可交易"
+  ]
+}

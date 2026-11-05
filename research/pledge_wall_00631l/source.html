@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>00631L 質借斷頭牆</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<style>
+:root { color-scheme: light; }
+body { margin: 0; }
+/* 版面：單欄備忘錄。先講狀態與結論，再給數字、風險、下一步、待決事項。 */
+:root {
+  --bg: #f6f7f8;
+  --surface: #ffffff;
+  --fg: #1c2127;
+  --muted: #5b6671;
+  --line: #d9dee3;
+  --accent: #1b5e73;
+  --ok: #1d6b45;
+  --warn: #8a5a00;
+  --warn-bg: #fbf1da;
+  --crit: #a3302a;
+  --head-bg: #eef1f3;
+  --font-body: "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14181c; --surface: #1c2227; --fg: #e6eaee; --muted: #9aa5b0; --line: #2f3841;
+    --accent: #6fb7cc; --ok: #6cc596; --warn: #e3b45a; --warn-bg: #2b2412; --crit: #ee8a83;
+    --head-bg: #232a30; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14181c; --surface: #1c2227; --fg: #e6eaee; --muted: #9aa5b0; --line: #2f3841;
+  --accent: #6fb7cc; --ok: #6cc596; --warn: #e3b45a; --warn-bg: #2b2412; --crit: #ee8a83;
+  --head-bg: #232a30; color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 15px; line-height: 1.75;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+main { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 32px; }
+h1 { font-size: 26px; line-height: 1.35; margin: 0; text-wrap: balance; }
+h2 { font-size: 17px; margin: 0 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+p { margin: 0; }
+.meta { color: var(--muted); font-size: 13px; margin-top: 6px; }
+.status { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; }
+.pill { display: inline-block; font-size: 12px; font-weight: 700; padding: 1px 10px; border-radius: 99px; letter-spacing: .04em; }
+.pill.ok { color: var(--ok); border: 1px solid var(--ok); }
+.pill.warn { color: var(--warn); background: var(--warn-bg); border: 1px solid var(--warn); }
+.pill.crit { color: var(--crit); border: 1px solid var(--crit); }
+ul { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; }
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 460px; font-size: 14px; }
+th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th { background: var(--head-bg); font-weight: 500; color: var(--muted); font-size: 13px; }
+td.n, th.n { text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.note { color: var(--muted); font-size: 13px; margin-top: 8px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+
+<main>
+  <header>
+    <h1>00631L 質借斷頭牆：目前進度</h1>
+    <p class="meta">資料截至 2026-11-04 收盤 · 研究線：QT-RES · 狀態：資料與重建完成，策略尚未驗證</p>
+  </header>
+
+  <section class="status" aria-label="進度摘要">
+    <p><span class="pill ok">已完成</span>　取得 00631L、0050 每日質借張數與收盤價，並重建估計的斷頭價位。</p>
+    <p><span class="pill warn">進行中</span>　驗證這個斷頭價位有沒有交易價值。目前沒有任何報酬或 α 檢定結果可報。</p>
+    <p><span class="pill crit">風險</span>　歷史上跌破維持率線時，沒有看到集中賣出，指標能不能當訊號還不確定。</p>
+  </section>
+
+  <section>
+    <h2>一、做了什麼</h2>
+    <ul>
+      <li><strong>找到質借資料來源。</strong>證交所「借貸款項擔保品餘額表」（TWTA1U）有逐檔逐日的「證券商不限用途款項借貸」張數：新增、賣出、現償、更換、餘額。公司內部的 quantdata 沒有這張表。</li>
+      <li><strong>下載 2022-01-03 至 2026-11-04，共 1,166 個交易日。</strong>0050 與 00631L 都沒有缺日，每日帳務（前日 + 新增 − 減少 = 今日）逐日對得上。</li>
+      <li><strong>收盤價</strong>取自 quantdata，FinMind 與 TEJ 兩來源在重疊期逐筆一致。已處理 0050（2025-06-18，1 拆 4）與 00631L（2026-03-31，1 拆 22）的分割。</li>
+      <li><strong>重建斷頭價位。</strong>證交所只公布張數，不公布金額，所以借款金額是依每日新增張數、當日收盤價與 60% 成數推算。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>二、目前數字（2026-11-04，假設成數 60%、追繳門檻 130%）</h2>
+    <div class="tbl">
+      <table>
+        <thead><tr><th></th><th class="n">00631L</th><th class="n">0050</th></tr></thead>
+        <tbody>
+          <tr><td>收盤價</td><td class="n">30.85</td><td class="n">99.85</td></tr>
+          <tr><td>質借餘額（張）</td><td class="n">447,747</td><td class="n">552,305</td></tr>
+          <tr><td>質借市值</td><td class="n">約 138 億</td><td class="n">約 551 億</td></tr>
+          <tr><td>估計借款金額</td><td class="n">約 86 億</td><td class="n">約 296 億</td></tr>
+          <tr><td>平均維持率</td><td class="n">160.0%</td><td class="n">186.2%</td></tr>
+          <tr><td>平均斷頭價（距現價）</td><td class="n">25.06（−18.8%）</td><td class="n">69.71（−30.2%）</td></tr>
+          <tr><td>已低於 130% 的部位</td><td class="n">7.3%</td><td class="n">0%</td></tr>
+          <tr><td>最先 10% 部位的觸發價</td><td class="n">30.41（−1.4%）</td><td class="n">85.53（−14.3%）</td></tr>
+          <tr><td>25% 部位的觸發價</td><td class="n">28.97（−6.1%）</td><td class="n">83.03（−16.8%）</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">斷頭價不是單一價位。00631L 今年 4 月以後新增了約 20 萬張質押，多半在高檔進場，觸發價從現價下方 1% 一路分布到 14% 以下。對照你提到的 −22%：同一算法在 11/03 重建為 −20.3%，接近，但還不能說已還原出對方的算法。</p>
+  </section>
+
+  <section>
+    <h2>三、重要發現與限制</h2>
+    <ul>
+      <li><strong>跌破 130% 之後，沒有看到集中賣出。</strong>2025-04 關稅崩跌時，模型估計 00631L 有 87% 的部位破線，但每天減少的質借量只有餘額的 1～8%，且以現償為主。全期間來看，破線日的減少量與平常日沒有差別。</li>
+      <li><strong>可能原因（尚未驗證）：</strong>實際平均成數低於 60%，或借款人被追繳時補擔保品、還款，而不是被處分。補進來的擔保品在表上記成「新增」，會讓模型高估借款。</li>
+      <li><strong>金額是推算的。</strong>公開資料沒有各人的借款金額與成數，所以所有維持率與斷頭價都是估計值，不是實際值。</li>
+      <li><strong>樣本少，也可能不適用於現在。</strong>歷史上大跌事件只有 2022-10、2024-08、2025-04 三次。當時 00631L 質借規模只有 20～30 億，現在約 138 億，大部分是 2026 年才進來。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>四、接下來的工作</h2>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>項目</th><th>目的</th></tr></thead>
+        <tbody>
+          <tr><td>成數敏感度（40%、50%、60%）</td><td>看斷頭牆對成數有多敏感，找出最接近 −22% 的設定</td></tr>
+          <tr><td>拆分「新增」為補擔保與新借款</td><td>修正維持率被低估的問題</td></tr>
+          <tr><td>事件研究（2022-10、2024-08、2025-04、2026-10）</td><td>檢查靠近斷頭牆時，後續 5、10、20 日報酬有沒有規律</td></tr>
+          <tr><td>訊號檢定（毛報酬，Newey-West 標準誤）</td><td>判斷能不能做成交易訊號，不通過就如實寫「沒有訊號」</td></tr>
+          <tr><td>策略與程式獨立稽核</td><td>找邏輯漏洞與偏誤，只送程式與報告，不送原始資料</td></tr>
+          <tr><td>研究文件與程式進 repo，開 PR</td><td>讓成果留在 git，兩台電腦都讀得到</td></tr>
+          <tr><td>證交所質借表每日自動收進 quantdata</td><td>讓資料能長期更新</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">判定原則：只有在多個獨立事件中訊號方向一致，才會把它當成策略往下推。如果檢定不通過，結論會寫成「這只是觀察槓桿部位離風險線多遠的工具，不是交易訊號」。</p>
+  </section>
+
+</main>
+</body>
+</html>
