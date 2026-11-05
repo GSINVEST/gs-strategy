@@ -31,3 +31,36 @@ def test_draft_is_honest(path):
 @pytest.mark.parametrize("path", DRAFTS, ids=lambda p: p.parent.name)
 def test_not_a_strategy_bundle(path):
     assert not (path.parent / "strategy.py").exists()
+
+
+PREREG = ROOT / "research" / "fin_otc_spread_tx" / "prereg-draft.yaml"
+
+
+def _prereg():
+    import yaml
+    return yaml.safe_load(PREREG.read_text(encoding="utf-8"))
+
+
+def test_prereg_draft_is_unsigned_and_not_in_frozen_dir():
+    d = _prereg()
+    assert d["schema"] == "preregistration/1"
+    for k in ("id", "author", "registered_at"):
+        assert d[k] == "", f"{k} 必須留空，由人簽核時填"
+    assert not list((ROOT / "experiments" / "preregistration").glob("*fin-otc*")), "草稿不得放進會凍結的目錄"
+    assert "TODO(人)" in PREREG.read_text(encoding="utf-8")
+
+
+def test_prereg_trial_accounting_adds_up():
+    t = _prereg()["draft_notes"]["trial_accounting"]
+    assert sum(b["n"] for b in t["batches"]) == t["counted_total"] == 70
+    assert t["if_testing_otc_single_leg"] == t["counted_total"] + 18
+    assert t["conservative_total"] == t["counted_total"] + 18 + 27
+
+
+def test_prereg_draft_agrees_with_research_draft_ledger():
+    import json
+    led = json.loads((ROOT / "research/fin_otc_spread_tx/draft.json").read_text(encoding="utf-8"))["stat_ledger"]
+    t = _prereg()["draft_notes"]["trial_accounting"]
+    assert led["trials_total"] == t["counted_total"]
+    assert led["conservative_total"] == t["conservative_total"]
+    assert led["next_version_if_single_leg_otc"] == t["if_testing_otc_single_leg"]
