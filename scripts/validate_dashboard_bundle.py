@@ -10,6 +10,7 @@ Prints a one-line summary per bundle; details on failure go to stderr.
 Rules implemented (mirrors spec §2.validation + §3):
   1. manifest.yaml + strategy.py present
   2. manifest.id matches ^[a-z0-9][a-z0-9_-]{0,63}$
+     (optional manifest.zkperf_id, if present, matches ^[a-z0-9][a-z0-9_-]{2,63}$)
   3. asset_class in {equity, future}
   4. start, end parse as ISO date; end > start
   5. capital_base is a positive number
@@ -39,6 +40,9 @@ except ImportError:
 
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+# Optional manifest.zkperf_id: pointer to a zk-perf registration. The proof is
+# verified by the genesis-deck gateway; gs-strategy only checks the format.
+ZKPERF_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{2,63}$")
 ALLOWED_ASSET_CLASS = {"equity", "future"}
 FORBIDDEN_IMPORT_PREFIXES = (
     "_common",
@@ -185,6 +189,15 @@ def validate(bundle: Path) -> List[str]:
     if sv != 1:
         errors.append(_err(
             bundle, f"spec_version must be 1 (current), got {sv!r}"
+        ))
+
+    # zkperf_id (optional; format only — NOT proof status)
+    zk = manifest.get("zkperf_id")
+    if zk is not None and not (isinstance(zk, str) and ZKPERF_ID_RE.fullmatch(zk)):
+        errors.append(_err(
+            bundle,
+            f"manifest.zkperf_id invalid: {zk!r} "
+            f"(must match {ZKPERF_ID_RE.pattern})",
         ))
 
     # Forbidden imports
