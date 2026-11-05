@@ -184,7 +184,7 @@
     {
       "id": "G_INTRADAY_FREQ",
       "field": "盤中頻率",
-      "reason": "IR 0.1.1 與 Gslang 第一版只支援日頻、一根 bar 一次決策；本策略是盤中 1 分 K。",
+      "reason": "Gslang 第一版範圍、現有 runner 與資料端是日頻、一根 bar 一次決策；IR 的 time.bar 是自由字串、產生器也沒寫死 1d，IR 能否表達盤中決策『未驗證』（不是『不支援』）；本策略是盤中 1 分 K。",
       "needed_for": [
         "ir.time",
         "tla",
@@ -193,7 +193,7 @@
       "owner": "人",
       "kind": "framework_limit",
       "status": "open",
-      "answer_zh": "作者不建議聚合成日頻（日頻預期無效）；建議另外討論盤中版。IR／Gslang 只支援日頻，此訊號暫時不適合放進去。"
+      "answer_zh": "作者不建議聚合成日頻（日頻預期無效）；建議另外討論盤中版。此訊號暫時不適合放進 Gslang 第一版與現有日頻 runner。（Jason 回覆原文說『IR／Gslang 只支援日頻』，該前提來自 Kevin 先前的提問，已更正：只有 Gslang 第一版、runner、資料端是日頻，IR 本身是否能表達盤中未驗證。）"
     },
     {
       "id": "G_STAT_GATE",
@@ -239,7 +239,7 @@
   "disposition": {
     "value": "stay_in_research",
     "by": "Jason 建議（2026-11-05）；待 Kevin／研究負責人確認",
-    "reason_zh": "訊號有初步結果但效果小（每筆預期約 0.5～2 bp，可能不夠付成本）；進出場規則、成本、盤中資料來源皆未定；IR／Gslang 第一版只支援日頻。"
+    "reason_zh": "訊號有初步結果但效果小（每筆預期約 0.5～2 bp，可能不夠付成本）；進出場規則、成本、盤中資料來源皆未定；Gslang 第一版與現有 runner 為日頻（IR 本身能否表達盤中未驗證）。"
   },
   "open_questions": [
     "試驗計數依 Kevin 指示採用 Jason 的數字（探索 27）；原報告的 34／43 已列為 superseded。Jason 的 27 是否涵蓋全部探索嘗試，未向他確認。"
