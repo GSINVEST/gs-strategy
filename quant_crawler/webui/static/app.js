@@ -239,6 +239,10 @@ function renderStrategies(filter = "") {
     const review = s.requires_review
       ? el("span", { class: "badge review" }, "待審")
       : el("span", { class: "badge no" }, "—");
+    // 「已登記 zkperf」僅表示 manifest 宣告了 id，不代表已驗證；未設定則不顯示
+    const zk = s.zkperf_registered
+      ? el("span", { class: "badge no zk", title: `zkperf_id: ${s.zkperf_id}（僅登記，非驗證結果）` }, "已登記 zkperf")
+      : document.createTextNode("");
     // spec links: README.md (the human spec) + manifest.yaml
     const specCell = el("span", { class: "spec-links" });
     if (s.has_spec_md) {
@@ -256,7 +260,7 @@ function renderStrategies(filter = "") {
     }
     if (!specCell.childNodes.length) specCell.append(document.createTextNode("—"));
     tbody.append(el("tr", {},
-      el("td", { class: "mono" }, s.id),
+      el("td", { class: "mono" }, s.id, zk),
       el("td", {}, el("span", { class: `badge ${s.origin}` }, s.origin)),
       el("td", { class: "mono" }, s.template || "—"),
       el("td", {}, tags),

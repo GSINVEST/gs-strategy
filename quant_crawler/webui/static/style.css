@@ -190,6 +190,7 @@ a:hover { text-decoration: underline; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-family: var(--mono); border: 1px solid var(--border); }
 .badge.ok { color: var(--green); border-color: #1f5b2b; background: #112417; }
 .badge.no { color: var(--muted); }
+.badge.zk { margin-left: 6px; }
 .badge.err { color: var(--red); border-color: #5b1f1f; background: #241414; }
 .badge.review { color: var(--amber); border-color: #5b4a1f; background: #241f14; }
 .badge.manual { color: var(--accent); }

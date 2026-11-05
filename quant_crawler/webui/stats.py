@@ -7,6 +7,7 @@ in isolation.
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 from datetime import date as _date
 from datetime import datetime, timezone
@@ -261,6 +262,17 @@ def _read_manifest(bundle: Path) -> Optional[Dict[str, Any]]:
         return None
 
 
+_ZKPERF_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{2,63}$")
+
+
+def _zkperf_id(manifest: Dict[str, Any]) -> Optional[str]:
+    """Return manifest.zkperf_id if it is a well-formed id, else None."""
+    zk = manifest.get("zkperf_id")
+    if isinstance(zk, str) and _ZKPERF_ID_RE.fullmatch(zk):
+        return zk
+    return None
+
+
 def _bundle_record(bundle: Path, origin: str, export_dir: Path) -> Dict[str, Any]:
     manifest = _read_manifest(bundle) or {}
     source = manifest.get("source") or {}
@@ -269,6 +281,7 @@ def _bundle_record(bundle: Path, origin: str, export_dir: Path) -> Dict[str, Any
     # Spec markdown: the bundle README is the human-readable strategy spec.
     spec_files = [f for f in ("README.md", "manifest.yaml", "strategy.py")
                   if (bundle / f).is_file()]
+    zkperf_id = _zkperf_id(manifest)
     return {
         "id": bundle_id,
         "name": manifest.get("name", bundle_id),
@@ -280,6 +293,11 @@ def _bundle_record(bundle: Path, origin: str, export_dir: Path) -> Dict[str, Any
         "bundle": manifest.get("bundle"),
         "asset_class": manifest.get("asset_class"),
         "exported": exported,
+        # zkperf_registered ONLY means "the manifest declares a well-formed
+        # zkperf_id". It is NOT proof status: gs-strategy never verifies
+        # proofs (that happens in the genesis-deck gateway).
+        "zkperf_id": zkperf_id,
+        "zkperf_registered": zkperf_id is not None,
         "path": str(bundle),
         "has_spec_md": (bundle / "README.md").is_file(),
         "spec_files": spec_files,               # served via /files/strategy/<id>/<f>

@@ -88,6 +88,17 @@ PATH="$HOME/gs-strategy/.venv-bt/bin:$PATH" \
 
 CI 用：失敗 bundle 數為 exit code。
 
+### 選填欄位 `zkperf_id`（zk-perf 登記）
+
+`manifest.yaml` 可選填 `zkperf_id`（格式 `^[a-z0-9][a-z0-9_-]{2,63}$`），
+用來指向 zk-perf 的登記項目；不填就沒有，既有策略皆未設定。
+
+- validator 只檢查格式，格式錯誤會回報明確錯誤（不會崩潰）。
+- 策略面板的 `/api/strategies` 會多出 `zkperf_id` 與 `zkperf_registered`，
+  有設定時列表顯示中性徽章「已登記 zkperf」，未設定則不顯示任何東西。
+- **`zkperf_registered` 只代表「manifest 宣告了 id」，不是 proof 狀態。**
+  gs-strategy 不驗證 proof、不連網；驗證與結果由 genesis-deck gateway 負責。
+
 ### 把舊式 config.yaml 轉成 manifest.yaml
 
 ```bash
