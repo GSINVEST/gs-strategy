@@ -98,6 +98,10 @@ def make_roll_futures_handler(days_before_close: int = 10):
                 adjustment="add",
             )
             front = data.current(cont, "contract")
+            if front is None:
+                # 資料包還沒有下一個合約（例如近月快到期但次月尚無資料）：無法換月，維持持倉，
+                # 不可對 None 下單（zipline 會丟 UnsupportedOrderParameters 使整個回測失敗）。
+                continue
             if front != held_contract:
                 pos_size = context.portfolio.positions[held_contract].amount
                 order_target(held_contract, 0)
