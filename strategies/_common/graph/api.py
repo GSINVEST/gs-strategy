@@ -5,6 +5,7 @@ import mimetypes
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit, unquote
 
+from . import agent_trader
 from .core import GraphError
 from .service import GraphConflict, json_value, restore_sidecar, user_message
 
@@ -31,6 +32,16 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Length', str(len(body)))
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
+        self.end_headers()
+        self.wfile.write(body)
+
+    def reply_raw(self, status, content_type, body):
+        # agent_trader 頁面自帶嚴格 CSP（只允許同源外部腳本）。
+        self.send_response(status)
+        self.send_header('Content-Type', content_type)
+        self.send_header('Content-Length', str(len(body)))
+        for name, value in agent_trader.SECURITY_HEADERS.items():
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -63,6 +74,10 @@ class Handler(BaseHTTPRequestHandler):
             url = urlsplit(self.path)
             parts = url.path.strip('/').split('/')
             query = parse_qs(url.query)
+            if not mutation and parts[:1] == ['agent-trader']:
+                return self.reply_raw(*agent_trader.handle_get(parts, query, self.headers))
+            if mutation and parts == ['api','agent-trader','decide']:
+                return self.reply(*agent_trader.handle_decide(body, self.headers))
             if not mutation and parts == ['api','session']:
                 return self.reply(200, s.session())
             if not mutation and parts == ['api','run-estimate']:

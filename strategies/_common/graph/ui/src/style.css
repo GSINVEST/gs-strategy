@@ -986,3 +986,15 @@ pre {
 .fsm-graph .fsm-edge text { fill: var(--muted); font-size: 10px; }
 .fsm-graph .fsm-arrow { fill: var(--muted); }
 .fsm-cex-text { font-size: 12px; line-height: 1.6; white-space: pre-wrap; margin: 0; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; font-family: inherit; }
+.nav-link {
+  color: var(--text);
+  text-decoration: none;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--panel-2);
+  white-space: nowrap;
+}
+.nav-link:hover {
+  border-color: var(--accent);
+}

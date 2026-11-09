@@ -329,6 +329,35 @@ GS_TEST_REAL_BUNDLE=1 PYTHONUTF8=1 .venv-bt/Scripts/python.exe -m pytest tests/t
 
 離線 fixture 只替代日曆的遠端輸入，不替代 orders、成交、成本或損益事件迴圈。fixture 匯入期間會暫存並還原日曆套件的快取，請勿在同一虛擬環境並行執行 fixture 測試。
 
+### Agent 交易員分頁（StratyUI 唯讀六畫面＋核准草稿）
+
+策略圖頁首的「Agent 交易員」連到 `/agent-trader`，只讀 agent-trader 匯出的 UI 快照
+（契約：specfeed-test `agent-trader/docs/ui-contract.md`；`latest.json`、`drafts.json`、`days/<date>.json`）。
+實作在 `strategies/_common/graph/agent_trader.py`，無新增依賴。
+
+| 環境變數 | 作用 |
+|---|---|
+| `AGENT_TRADER_UI_DIR` | 快照目錄（`ops export-ui` 的輸出，預設 `<state-dir>/ui`）。未設或目錄不存在 → 顯示「尚無資料」 |
+| `AGENT_TRADER_APPROVE_CMD` | 核准命令前綴，須以 `ui-decide` 結尾，例：`/path/python -m agent_trader.ops ui-decide`。未設 = 核准功能關閉（預設） |
+| `AGENT_TRADER_APPROVE_EXTRA_ARGS` | 附加在命令最後的固定參數，例：`--state-dir /data/state --config-dir /app/config` |
+| `AGENT_TRADER_IDENTITY_HEADER` | 指名「由可信反向代理注入的已驗證身分標頭」，例：`X-Auth-Request-Email`。未設 = 無身分機制，核准關閉 |
+
+六畫面：總覽（NAV／指數／不動作反事實，依 agent 版本分段著色，並顯示樣本天數與「統計上尚不足」警語）、
+今日持倉、決策日誌、推論鏈（失效引用紅、無法驗證灰）、覆盤報告、待核准草稿。
+快照 `stale`、超過 `stale_after_hours`（`AGE_EXCEEDED`）或 `schema_version` 不是 1 時，頁首顯示警示條。
+所有快照值一律 HTML 跳脫；LLM 的 markdown 報告以純文字 `<pre>` 呈現，不渲染。頁面 CSP 只允許同源外部腳本。
+
+**核准／駁回是唯一的寫入，預設關閉。** 啟用需同時設定上表前兩個變數與身分標頭，且該次請求帶有效身分：
+
+- `--by` 一律由伺服端從身分標頭決定，請求本文的任何 `by` 都被忽略。
+- 以參數陣列呼叫（無 shell）；草稿 id 須符合 `kind-<hex>`、備註不含控制字元且 ≤ 500 字，並先對照快照確認草稿存在且為 `pending_approval`。
+- 名單檢查在 agent-trader 的 `ui-decide`（`config/ui.toml` 的 `approvers`，預設空 = 全拒）；被拒時回對應錯誤碼（403／404／409），不洩漏 CLI 原始輸出。
+- 現況：`main` 上的圖伺服器**沒有**身分機制（`--public-host` 與 `X-Auth-Request-Email` 的處理在尚未合併的 `9f4a71a`）。
+  因此預設核准端點回 503；只有部署在會剝除並重新注入該標頭的 OIDC 反向代理之後，才應設定 `AGENT_TRADER_IDENTITY_HEADER`。
+  伺服器只綁 127.0.0.1，但本機其他使用者可自帶標頭偽冒身分，這是信任代理模型的已知邊界。
+
+測試：`tests/test_agent_trader_tab.py`（渲染、空狀態、stale、跳脫、核准權限與注入防護）。
+
 ### 組合式研究 workflow：QUANTDATA + RAG → 可熱抽換 LLM → walk-forward 回放
 
 在 Live Strategy Graph 上加了參數化接點型別、`>>`／`@` 組合 DSL，以及第一張 LLM 策略圖 `strategies/llm_view_tx`。
