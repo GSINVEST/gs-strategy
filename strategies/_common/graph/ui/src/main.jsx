@@ -1110,6 +1110,9 @@ function App() {
         <button data-testid="fsm" onClick={() => setShowFsm(true)}>
           形式化驗證
         </button>
+        <a className="nav-link" data-testid="agent-trader-link" href="/agent-trader">
+          Agent 交易員
+        </a>
         {session.fixture && (
           <span className="fixture" data-testid="fixture-banner">
             FIXTURE 資料・獨立 ledger
