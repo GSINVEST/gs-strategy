@@ -1,11 +1,13 @@
 :root {
-  --bg: #0f1419;
-  --panel: #1a212b;
-  --panel-2: #232c38;
-  --border: #2d3744;
-  --text: #e6edf3;
-  --muted: #8b98a9;
-  --accent: #4ea1ff;
+  /* 桌面版應用面板的 manifest 設 "theme": "gs" 時會注入 --gs-* 變數，這裡優先採用；
+     沒有注入（瀏覽器直接開）時退回原本的色票。 */
+  --bg: var(--gs-bg, #0f1419);
+  --panel: var(--gs-surface, #1a212b);
+  --panel-2: var(--gs-surface-hover, #232c38);
+  --border: var(--gs-border, #2d3744);
+  --text: var(--gs-text, #e6edf3);
+  --muted: var(--gs-muted, #8b98a9);
+  --accent: var(--gs-gold, #4ea1ff);
   --green: #3fb950;
   --amber: #d29922;
   --red: #f85149;
