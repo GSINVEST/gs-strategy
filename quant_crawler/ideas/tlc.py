@@ -28,12 +28,20 @@ class TlcResult:
     demo_params: bool = True
 
 
-def verdict_from_atlas(atlas: dict, ir_id: str) -> str:
-    if not atlas.get("tlc_ran"):
+def verdict_from_atlas(atlas, ir_id: str) -> str:
+    """任何結構異常都失敗關閉（回 unchecked），不丟例外。"""
+    if not isinstance(atlas, dict) or not atlas.get("tlc_ran"):
         return "unchecked"
-    for t in atlas.get("targets", []):
+    targets = atlas.get("targets")
+    if not isinstance(targets, list):
+        return "unchecked"
+    for t in targets:
+        if not isinstance(t, dict):
+            return "unchecked"
         if t.get("id") == ir_id:
             s = t.get("status", "")
+            if not isinstance(s, str):
+                return "unchecked"
             return s if s in _KNOWN else "inconclusive"
     return "unchecked"
 
@@ -68,10 +76,10 @@ def write_demo_params(ir: dict, d: Path) -> Path:
     return p
 
 
-def _clear_dir(d: Path) -> None:
-    # fsm_atlas 會跑資料夾內所有 *.ir.json，殘留檔會污染本次結果
+def _clear_matching(d: Path, pattern: str) -> None:
+    # fsm_atlas 會跑 ir 資料夾內所有 *.ir.json、params 內 *.demo.json；只清這些，不動其他檔案
     if d.is_dir():
-        for f in d.iterdir():
+        for f in d.glob(pattern):
             if f.is_file():
                 f.unlink()
 
@@ -81,8 +89,8 @@ def run_tlc(ir_path: Path, work: Path, root: str | None = None, timeout: int = 6
     ir = json.loads(ir_path.read_text(encoding="utf-8"))
     ir_dir, params_dir = work / "ir", work / "params"
     ir_dir.mkdir(parents=True, exist_ok=True)
-    _clear_dir(ir_dir)
-    _clear_dir(params_dir)
+    _clear_matching(ir_dir, "*.ir.json")
+    _clear_matching(params_dir, "*.demo.json")
     shutil.copy(ir_path, ir_dir / f"{ir['id']}.ir.json")
     write_demo_params(ir, params_dir)
     out = work / "atlas.json"
@@ -105,7 +113,6 @@ def run_tlc(ir_path: Path, work: Path, root: str | None = None, timeout: int = 6
         atlas = json.loads(out.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
         return TlcResult("unchecked", {"error": f"atlas 缺失或毀損：{e}", "rc": p.returncode})
-    if not isinstance(atlas, dict):
-        return TlcResult("unchecked", {"error": "atlas 不是 JSON 物件", "rc": p.returncode})
     return TlcResult(verdict_from_atlas(atlas, ir["id"]),
-                     {"tlc_note": atlas.get("tlc_note"), "rc": p.returncode})
+                     {"tlc_note": atlas.get("tlc_note") if isinstance(atlas, dict) else None,
+                      "rc": p.returncode})

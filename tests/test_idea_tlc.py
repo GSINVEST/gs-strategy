@@ -35,6 +35,23 @@ def test_missing_target_is_unchecked():
     assert verdict_from_atlas(_atlas("pass_with_bounds"), "other") == "unchecked"
 
 
+@pytest.mark.parametrize("bad", [
+    {"tlc_ran": True, "targets": 5},          # targets 不是 list
+    {"tlc_ran": True, "targets": [1]},        # 元素不是 dict
+    {"tlc_ran": True, "targets": "x"},        # targets 是字串（可迭代但元素是字元）
+    {"tlc_ran": True, "targets": None},
+    {"tlc_ran": True, "targets": [{"id": "x", "status": ["pass_with_bounds"]}]},  # status 非字串
+    {"tlc_ran": True, "targets": [{"id": ["x"], "status": "pass_with_bounds"}]},  # id 非字串
+])
+def test_malformed_targets_fail_closed(bad):
+    assert verdict_from_atlas(bad, "x") == "unchecked"
+
+
+@pytest.mark.parametrize("bad", [None, [], "atlas", 5])
+def test_non_dict_atlas_fails_closed(bad):
+    assert verdict_from_atlas(bad, "x") == "unchecked"
+
+
 def test_demo_params_are_marked_demo(tmp_path):
     ir = {"id": "x", "costs": {"slippage": {"spread_points": 6.0}}}
     p = write_demo_params(ir, tmp_path)
@@ -109,8 +126,8 @@ def test_launch_oserror_is_unchecked(monkeypatch, fake_root, ir_file, tmp_path):
     assert r.verdict == "unchecked"
 
 
-def test_stale_atlas_is_not_trusted(monkeypatch, fake_root, ir_file, tmp_path):
-    # 上一輪留下的 pass_with_bounds atlas；本輪子行程沒寫新檔就崩潰 → 不得回傳舊 verdict
+def test_stale_atlas_is_not_trusted_on_nonzero_exit(monkeypatch, fake_root, ir_file, tmp_path):
+    # 上一輪留下的 pass_with_bounds atlas；本輪子行程 rc=1 崩潰 → 不得回傳舊 verdict
     work = tmp_path / "w"
     work.mkdir()
     (work / "atlas.json").write_text(json.dumps(_atlas("pass_with_bounds")), encoding="utf-8")
@@ -122,11 +139,34 @@ def test_stale_atlas_is_not_trusted(monkeypatch, fake_root, ir_file, tmp_path):
     assert r.verdict == "unchecked"
 
 
+def test_stale_atlas_is_not_trusted_on_zero_exit_without_new_file(monkeypatch, fake_root, ir_file, tmp_path):
+    # 突變防護：rc=0 但子行程沒寫新檔，舊的 pass_with_bounds 不得被當成本次結果
+    work = tmp_path / "w"
+    work.mkdir()
+    (work / "atlas.json").write_text(json.dumps(_atlas("pass_with_bounds")), encoding="utf-8")
+
+    def no_new_file(cmd):
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+    _fake_run(monkeypatch, no_new_file)
+    r = run_tlc(ir_file, work, root=str(fake_root))
+    assert r.verdict == "unchecked"
+    assert r.verdict != "pass_with_bounds"
+
+
 def test_corrupt_atlas_is_unchecked(monkeypatch, fake_root, ir_file, tmp_path):
     def garbage(cmd):
         open(_out_arg(cmd), "w", encoding="utf-8").write("{not json")
         return subprocess.CompletedProcess(cmd, 0, "", "")
     _fake_run(monkeypatch, garbage)
+    r = run_tlc(ir_file, tmp_path / "w", root=str(fake_root))
+    assert r.verdict == "unchecked"
+
+
+def test_structurally_bad_atlas_is_unchecked(monkeypatch, fake_root, ir_file, tmp_path):
+    def bad_shape(cmd):
+        open(_out_arg(cmd), "w", encoding="utf-8").write(json.dumps({"tlc_ran": True, "targets": 5}))
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+    _fake_run(monkeypatch, bad_shape)
     r = run_tlc(ir_file, tmp_path / "w", root=str(fake_root))
     assert r.verdict == "unchecked"
 
@@ -167,3 +207,22 @@ def test_leftover_ir_and_params_are_cleared(monkeypatch, fake_root, ir_file, tmp
     run_tlc(ir_file, work, root=str(fake_root))
     assert seen["ir"] == ["x.ir.json"]
     assert seen["params"] == ["x.demo.json"]
+
+
+def test_clear_dir_keeps_unrelated_files(monkeypatch, fake_root, ir_file, tmp_path):
+    work = tmp_path / "w"
+    (work / "ir").mkdir(parents=True)
+    (work / "params").mkdir(parents=True)
+    (work / "ir" / "keep.txt").write_text("keep", encoding="utf-8")
+    (work / "params" / "keep.txt").write_text("keep", encoding="utf-8")
+    (work / "ir" / "other.ir.json").write_text("{}", encoding="utf-8")
+    (work / "params" / "other.demo.json").write_text("{}", encoding="utf-8")
+
+    def nothing(cmd):
+        return subprocess.CompletedProcess(cmd, 1, "", "")
+    _fake_run(monkeypatch, nothing)
+    run_tlc(ir_file, work, root=str(fake_root))
+    assert (work / "ir" / "keep.txt").read_text(encoding="utf-8") == "keep"
+    assert (work / "params" / "keep.txt").read_text(encoding="utf-8") == "keep"
+    assert not (work / "ir" / "other.ir.json").exists()
+    assert not (work / "params" / "other.demo.json").exists()
