@@ -490,7 +490,7 @@ class GraphService:
             self.revision += 1
             return self.document()
 
-    def start(self, preview=False, *, expected_revision=_UNSET, expected_backtest_key=_UNSET):
+    def start(self, preview=False, *, expected_revision=_UNSET, expected_backtest_key=_UNSET, actor=None):
         with self.lock:
             self.check_revision(expected_revision)
             self.idle()
@@ -515,7 +515,7 @@ class GraphService:
                     time.sleep(0.01)
                     ctx.check_cancelled()
             ctx = Context(ledger=self.ledger, progress=progress,
-                          services={'root': self.root, 'document_graph_hash': document_hash})
+                          services={'root': self.root, 'document_graph_hash': document_hash, 'actor': actor})
             self.jobs[job_id] = job
             self.active = job_id
             self._token = ctx.token

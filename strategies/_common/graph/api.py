@@ -11,9 +11,13 @@ from .service import GraphConflict, json_value, restore_sidecar, user_message
 
 class GraphHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
-    def __init__(self, address, service, ui_dist=None):
+    def __init__(self, address, service, ui_dist=None, public_hosts=()):
         self.service = service
         self.ui_dist = Path(ui_dist).resolve() if ui_dist else None
+        # Names a trusted reverse proxy (e.g. Caddy + OIDC on the LAN) serves us
+        # under. The socket itself stays bound to loopback; these only widen the
+        # Host/Origin checks for requests that arrive through that proxy.
+        self.public_hosts = frozenset(h.lower() for h in public_hosts)
         super().__init__(address, Handler)
 
 
@@ -45,11 +49,16 @@ class Handler(BaseHTTPRequestHandler):
         try:
             host = self.headers.get('Host', '')
             allowed = {f'127.0.0.1:{self.server.server_port}', f'localhost:{self.server.server_port}'}
-            if host not in allowed:
+            public = host.lower().removesuffix(':80') if host.lower().removesuffix(':80') in self.server.public_hosts else None
+            if host not in allowed and public is None:
                 return self.reply(403, {'error': 'local Host required'})
             origin = self.headers.get('Origin')
-            if origin is not None and origin != 'http://' + host:
+            origins = {'http://' + host} | ({f'http://{public}', f'https://{public}'} if public else set())
+            if origin is not None and origin not in origins:
                 return self.reply(403, {'error': 'same origin required'})
+            # Identity is only trusted from the proxy, which strips client-sent copies
+            # of this header before oauth2-proxy sets it (wiki-poc oidc_guard).
+            actor = self.headers.get('X-Auth-Request-Email') if public else None
             body = {}
             if mutation:
                 if self.headers.get_content_type() != 'application/json':
@@ -121,7 +130,7 @@ class Handler(BaseHTTPRequestHandler):
             if mutation and len(parts) == 4 and parts[:2] == ['api','nodes'] and parts[3] == 'params':
                 return self.reply(200, s.parameters(parts[2], body['params'], expected_revision=body.get('expected_revision')))
             if mutation and parts in (['api','preview'],['api','run']):
-                return self.reply(202, s.start(preview=True) if parts[-1] == 'preview' else s.start(expected_revision=body.get('expected_revision'), expected_backtest_key=body.get('expected_backtest_key')))
+                return self.reply(202, s.start(preview=True) if parts[-1] == 'preview' else s.start(expected_revision=body.get('expected_revision'), expected_backtest_key=body.get('expected_backtest_key'), actor=actor))
             if mutation and len(parts) == 4 and parts[:2] == ['api','jobs'] and parts[3] == 'cancel':
                 result = s.cancel(parts[2])
                 return self.reply(202 if result['accepted'] else 409, result)

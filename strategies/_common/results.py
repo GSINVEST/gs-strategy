@@ -66,6 +66,9 @@ def connect(path):
     conn.row_factory = sqlite3.Row
     conn.execute('PRAGMA journal_mode=WAL')
     conn.executescript(SCHEMA)
+    # Additive migration for stores created before per-user attribution existed.
+    if 'actor' not in {r[1] for r in conn.execute('PRAGMA table_info(runs)')}:
+        conn.execute('ALTER TABLE runs ADD COLUMN actor TEXT')
     return conn
 
 
@@ -115,6 +118,7 @@ def record(path, *, run_id, status, message, context, values, states, selection_
         'sharpe': _num(report.get('annualized_sharpe')), 'psr': _num(report.get('psr')),
         'dsr': _num(report.get('dsr')), 'max_drawdown': _num(report.get('max_drawdown')),
         'cagr': _num(report.get('cagr')), 'n_days': report.get('n_days'),
+        'actor': context.services.get('actor'),
         'states': json.dumps({k: v.get('status') for k, v in states.items()}, ensure_ascii=False),
         'params': json.dumps({n['id']: n.get('params', {}) for n in graph.get('nodes', [])},
                              ensure_ascii=False, default=str),
@@ -144,7 +148,7 @@ def runs(path, strategy=None, limit=50):
         return []
     with closing(connect(path)) as conn:
         sql = ('SELECT run_id, recorded_at, strategy, status, message, backtest_key, new_trial, selection_n, '
-               'engine, model, sharpe, psr, dsr, max_drawdown, cagr, n_days FROM runs')
+               'engine, model, sharpe, psr, dsr, max_drawdown, cagr, n_days, actor FROM runs')
         args = []
         if strategy:
             sql += ' WHERE strategy = ?'

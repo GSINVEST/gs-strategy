@@ -248,7 +248,7 @@ export function Results({ strategy, close, revision }) {
         {tab === "runs" && rows && rows.length > 0 && (
           <table className="replay-table results-table">
             <thead>
-              <tr><th>時間（UTC）</th><th>策略</th><th>狀態</th><th>試驗</th><th>N</th><th>模型／引擎</th>
+              <tr><th>時間（UTC）</th><th>策略</th><th>執行者</th><th>狀態</th><th>試驗</th><th>N</th><th>模型／引擎</th>
                 <th>Sharpe</th><th>DSR</th><th>MDD</th><th>CAGR</th><th>天數</th></tr>
             </thead>
             <tbody>
@@ -256,6 +256,7 @@ export function Results({ strategy, close, revision }) {
                 <tr key={r.run_id} className={detail?.run_id === r.run_id ? "active" : ""} onClick={() => open(r.run_id)}>
                   <td className="mono">{r.recorded_at.slice(0, 19).replace("T", " ")}</td>
                   <td>{r.strategy}</td>
+                  <td title={r.actor || "本機"}>{r.actor ? r.actor.split("@")[0] : "本機"}</td>
                   <td className={r.status === "complete" ? "ok" : "bad"} title={r.message || ""}>{r.status === "complete" ? "完成" : "失敗／拒絕"}</td>
                   <td>{r.new_trial ? "新試驗 +1" : r.backtest_key ? "快取重播" : "—"}</td>
                   <td>{r.selection_n ?? "—"}</td>
