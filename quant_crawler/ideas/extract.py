@@ -14,6 +14,11 @@ from quant_crawler.storage.models import PaperRecord
 
 LLM = Callable[[str, str], str]
 
+FIELDS = ("hypothesis", "mechanism")
+_DEGRADE_ERRORS = (TypeError, AttributeError, ValueError, KeyError)
+_CJK = re.compile(r"[一-鿿]")
+_DECODER = json.JSONDecoder()
+
 SYSTEM = (
     "你是量化研究助理。只依使用者提供的標題與摘要抽取，不得引入摘要沒有的內容。"
     "輸出**單一 JSON 物件**，鍵：hypothesis（一句話、方向先押定）、mechanism（為何訊號應存在）、"
@@ -32,46 +37,91 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip().lower()
 
 
+def _long_enough(text: str) -> bool:
+    """中文引用以非空白字元 ≥ 6 計；其餘以空白切分的單字 ≥ 3 計。"""
+    if _CJK.search(text):
+        return len(re.sub(r"\s+", "", text)) >= 6
+    return len(text.split()) >= 3
+
+
 def verify_quotes(quotes: list[dict], source_text: str) -> list[dict]:
+    """只保留：為 dict、field 為 hypothesis/mechanism、長度足夠、且逐字出現在 source_text 的引用。
+    型別異常的項目一律略過，不丟例外。"""
+    if not isinstance(quotes, list) or not isinstance(source_text, str):
+        return []
     hay = _norm(source_text)
     out = []
-    for q in quotes or []:
-        t = _norm(str(q.get("text", "")))
-        if t and t in hay:
-            out.append({"field": q.get("field", ""), "text": q["text"]})
+    for q in quotes:
+        if not isinstance(q, dict):
+            continue
+        field, text = q.get("field"), q.get("text")
+        if not isinstance(field, str) or field not in FIELDS:
+            continue
+        if not isinstance(text, str) or not _long_enough(text.strip()):
+            continue
+        if _norm(text) in hay:
+            out.append({"field": field, "text": text})
     return out
 
 
 def _parse_json(text: str) -> dict | None:
-    m = re.search(r"\{.*\}", text, re.S)
-    if not m:
+    """從每個 '{' 起嘗試 raw_decode，回傳第一個成功且為 dict 的物件。"""
+    if not isinstance(text, str):
         return None
-    try:
-        d = json.loads(m.group(0))
-    except json.JSONDecodeError:
-        return None
-    return d if isinstance(d, dict) else None
+    for m in re.finditer(r"\{", text):
+        try:
+            obj, _ = _DECODER.raw_decode(text, m.start())
+        except ValueError:  # json.JSONDecodeError 為其子類
+            continue
+        if isinstance(obj, dict):
+            return obj
+    return None
+
+
+def _str(v) -> str:
+    return v if isinstance(v, str) else ""
+
+
+def _strlist(v) -> list[str]:
+    if not isinstance(v, list):
+        return []
+    return [x for x in v if isinstance(x, str)]
+
+
+def _base_card(rec: PaperRecord) -> IdeaCard:
+    return IdeaCard(id=slug(f"{rec.source}_{rec.source_id}"),
+                    source=f"{rec.source}:{rec.source_id}", title=rec.title)
 
 
 def extract_card(rec: PaperRecord, llm: LLM) -> IdeaCard:
-    card = IdeaCard(id=slug(f"{rec.source}_{rec.source_id}"),
-                    source=f"{rec.source}:{rec.source_id}", title=rec.title)
-    system, user = build_prompt(rec)
-    d = _parse_json(llm(system, user))
-    if d is None:
-        card.reason = "抽取失敗：LLM 回應不是 JSON"
+    card = _base_card(rec)
+    try:
+        system, user = build_prompt(rec)
+        d = _parse_json(llm(system, user))
+        if d is None:
+            card.reason = "抽取失敗：LLM 回應不是 JSON"
+            return card
+        raw = d.get("quotes", [])
+        # 標題與摘要分別比對，引用不得跨越兩者邊界；結果取聯集並去重。
+        quotes: list[dict] = []
+        for src in (rec.title, rec.abstract):
+            for q in verify_quotes(raw, src):
+                if q not in quotes:
+                    quotes.append(q)
+        have = {q["field"] for q in quotes}
+        card.quotes = quotes
+        card.hypothesis = _str(d.get("hypothesis")) if "hypothesis" in have else ""
+        card.mechanism = _str(d.get("mechanism")) if "mechanism" in have else ""
+        card.market = _str(d.get("market"))
+        card.horizon = _str(d.get("horizon"))
+        card.data_needs = _strlist(d.get("data_needs"))
+        card.flaws = _strlist(d.get("flaws"))
+        card.signature = _str(d.get("signature"))
         return card
-    quotes = verify_quotes(d.get("quotes", []), f"{rec.title} {rec.abstract}")
-    have = {q["field"] for q in quotes}
-    card.quotes = quotes
-    card.hypothesis = str(d.get("hypothesis", "")) if "hypothesis" in have else ""
-    card.mechanism = str(d.get("mechanism", "")) if "mechanism" in have else ""
-    card.market = str(d.get("market", ""))
-    card.horizon = str(d.get("horizon", ""))
-    card.data_needs = [str(x) for x in d.get("data_needs", []) or []]
-    card.flaws = [str(x) for x in d.get("flaws", []) or []]
-    card.signature = str(d.get("signature", ""))
-    return card
+    except _DEGRADE_ERRORS as e:
+        failed = _base_card(rec)
+        failed.reason = f"抽取失敗：{type(e).__name__}"
+        return failed
 
 
 class OpenAICompatLLM:
