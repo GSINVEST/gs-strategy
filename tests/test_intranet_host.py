@@ -90,3 +90,14 @@ def test_cli_rejects_malformed_public_hosts(capsys):
     with pytest.raises(SystemExit):
         main(['types', '--public-host', 'http://strategy.gsinvest.com'])
     assert '主機名稱' in capsys.readouterr().err
+
+
+def test_bind_defaults_to_loopback_and_rejects_non_ip(capsys):
+    from strategies._common.graph.__main__ import main
+    with pytest.raises(SystemExit):
+        main(['types', '--bind', 'not-an-ip'])
+    assert 'IP' in capsys.readouterr().err
+    import argparse
+    from strategies._common.graph import __main__ as m
+    src = open(m.__file__, encoding='utf-8').read()
+    assert "default='127.0.0.1'" in src

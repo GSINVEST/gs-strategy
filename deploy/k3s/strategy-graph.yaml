@@ -1,0 +1,58 @@
+# 策略圖（Live Strategy Graph / StratyUI）on k3s。P0：先以 fixture 模式起來（不碰 ledger、不連 TEJ／LLM）。
+# 資料放 hostPath /srv/gs-data/strategy-graph（uid 10001 可寫）：data/ graph-runs/ log/ zipline/。
+#
+# ⚠ 認證邊界：伺服器信任 X-Auth-Request-Email（只在 Host 為 public-host 時）。該標頭是 wiki-caddy 的 oidc_guard 設定的，
+#   若有人能直接連到 NodePort 並自帶 Host／標頭，就能偽造身分。所以 NodePort 只能讓 gs-linux 轉發來源連入
+#   （jsonhuang 主機防火牆限制），不可對全區網開放；P1 前要完成這項限制。
+# ⚠ ledger（選擇次數 N）只能有一個寫入者：replicas 固定 1、Recreate；切換前 WSL 端的排程工作必須先停。
+apiVersion: v1
+kind: Namespace
+metadata: {name: gs-dash}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: strategy-graph, namespace: gs-dash}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: strategy-graph}}
+  template:
+    metadata: {labels: {app: strategy-graph}}
+    spec:
+      containers:
+        - name: web
+          image: gs/strategy-graph:REPLACE_SHA
+          imagePullPolicy: Never
+          # P0：--fixture 不可覆寫儲存位置，且不寫 ledger。P1 起去掉 --fixture 並掛資料。
+          args: ["python", "-m", "strategies._common.graph", "ui", "--fixture",
+                 "--graph", "strategies/tsmom_tx_mtx/graph.json", "--port", "9112",
+                 "--bind", "0.0.0.0", "--public-host", "strategy.gsinvest.com"]
+          ports: [{containerPort: 9112}]
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 9112
+              # 伺服器會拒絕 Host 不是 127.0.0.1／public-host 的請求（含 kubelet 預設的 Pod IP）
+              httpHeaders: [{name: Host, value: "127.0.0.1:9112"}]
+            periodSeconds: 30
+          resources:
+            requests: {cpu: 100m, memory: 512Mi}
+            limits: {memory: 4Gi}
+          # P1 起使用（先註解）：
+          #   volumeMounts:
+          #     - {name: root, mountPath: /app/data, subPath: data}
+          #     - {name: root, mountPath: /app/.graph-runs, subPath: graph-runs}
+          #     - {name: root, mountPath: /app/log, subPath: log}
+          #     - {name: root, mountPath: /home/app/.zipline, subPath: zipline}
+          #   env 另含 GS_ZIPLINE_TEJ_ROOT、TEJAPI_KEY（secretKeyRef）、QuantData 位址
+      # volumes:
+      #   - name: root
+      #     hostPath: {path: /srv/gs-data/strategy-graph, type: DirectoryOrCreate}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: strategy-graph, namespace: gs-dash}
+spec:
+  type: NodePort
+  selector: {app: strategy-graph}
+  ports: [{port: 9112, targetPort: 9112, nodePort: 30112}]
