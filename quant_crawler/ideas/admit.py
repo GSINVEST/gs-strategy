@@ -2,12 +2,17 @@
 """入庫：把通過者寫成 dashboard-spec v1 bundle，並登記進 strategies/INDEX.yaml。"""
 from __future__ import annotations
 
+import os
+import re
 import shutil
+import tempfile
 from pathlib import Path
 
 import yaml
 
 from quant_crawler.ideas.card import IdeaCard
+
+_ID_OK = re.compile(r"[a-z0-9][a-z0-9_-]*")
 
 
 def _const(ir: dict, name: str, default=None):
@@ -18,14 +23,29 @@ def _const(ir: dict, name: str, default=None):
 
 
 def write_bundle(card: IdeaCard, ir: dict, strategy_py: str, strategies_dir: Path, gslang_src: Path) -> Path:
-    d = strategies_dir / card.id
+    cid = card.id
+    if not isinstance(cid, str) or not _ID_OK.fullmatch(cid):
+        raise ValueError(f"不合法的 card.id：{cid!r}")
+    d = strategies_dir / cid
     if d.exists():
         raise FileExistsError(f"{d} 已存在；入庫不覆蓋")
-    d.mkdir(parents=True)
+    tmp = Path(tempfile.mkdtemp(prefix=f".{cid}.tmp-", dir=strategies_dir))
+    try:
+        _fill_bundle(tmp, card, ir, strategy_py, gslang_src)
+        os.rename(tmp, d)
+    except BaseException:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
+    return d
+
+
+def _fill_bundle(d: Path, card: IdeaCard, ir: dict, strategy_py: str, gslang_src: Path) -> None:
     (d / "strategy.py").write_text(strategy_py, encoding="utf-8", newline="\n")
     (d / "gslang").mkdir()
-    for name in ("__init__.py", "indicators.py"):        # vendored：bundle 不得依賴 _common
-        shutil.copyfile(gslang_src / name, d / "gslang" / name)
+    for f in sorted(Path(gslang_src).glob("*.py")):      # vendored：bundle 不得依賴 _common
+        shutil.copyfile(f, d / "gslang" / f.name)
+    (d / "gslang" / "SOURCE.txt").write_text(
+        f"vendored copy, do not edit\nsource: {gslang_src}\n", encoding="utf-8", newline="\n")
     sym = [i["id"] for i in ir.get("instruments", [])]
     cost = ir.get("costs", {}).get("commission", {}).get("per_instrument", {})
     spread = ir.get("costs", {}).get("slippage", {}).get("spread_points")
@@ -54,27 +74,50 @@ def write_bundle(card: IdeaCard, ir: dict, strategy_py: str, strategies_dir: Pat
         f"- 批次：{card.batch_id}\n- 缺陷（抽取時列出）：{'；'.join(card.flaws) or '—'}\n\n"
         "> 本策略由 idea 漏斗自動產生，TLC PASS 只代表「在示範參數的有限模型內未發現違反」。\n",
         encoding="utf-8", newline="\n")
-    return d
 
 
 def update_index(strategies_dir: Path, entry: dict) -> None:
     p = strategies_dir / "INDEX.yaml"
+    if not isinstance(entry, dict) or "id" not in entry:
+        raise ValueError("index entry 缺 id")
     doc = yaml.safe_load(p.read_text(encoding="utf-8")) if p.exists() else None
     doc = doc or {"schema": "strategy-index/1", "entries": []}
-    if any(e["id"] == entry["id"] for e in doc["entries"]):
+    if not isinstance(doc, dict):
+        raise ValueError("INDEX.yaml 格式不是 mapping")
+    if doc.get("schema", "strategy-index/1") != "strategy-index/1":
+        raise ValueError(f"未知 schema：{doc.get('schema')!r}")
+    doc.setdefault("schema", "strategy-index/1")
+    entries = doc.get("entries") or []
+    if not isinstance(entries, list) or any(not isinstance(e, dict) or "id" not in e for e in entries):
+        raise ValueError("INDEX.yaml 既有 entries 格式錯誤（缺 id）")
+    if any(e["id"] == entry["id"] for e in entries):
         raise ValueError(f"{entry['id']} 已在索引；不覆蓋")
-    doc["entries"] = sorted(doc["entries"] + [entry], key=lambda e: e["id"])
-    p.write_text(yaml.safe_dump(doc, allow_unicode=True, sort_keys=False), encoding="utf-8", newline="\n")
+    doc["entries"] = sorted(entries + [entry], key=lambda e: e["id"])
+    fd, tmp = tempfile.mkstemp(prefix="INDEX.", suffix=".tmp", dir=strategies_dir)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            yaml.safe_dump(doc, f, allow_unicode=True, sort_keys=False)
+        os.replace(tmp, p)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
 
 
 def gate_admission(card: IdeaCard, batch_prereg_ok: bool, bundle_ok: bool, bt_result: Path | None) -> list[str]:
     why = []
     if card.status != "bt_done":
         why.append(f"卡片狀態是 {card.status}，必須是 bt_done")
-    if not batch_prereg_ok:
+    if card.verdict != "pass_with_bounds":
+        why.append(f"TLC verdict 是 {card.verdict!r}，必須是 pass_with_bounds")
+    if batch_prereg_ok is not True:
         why.append("批次 preregistration 未通過 check_preregistration（需人簽核）")
-    if not bundle_ok:
+    if bundle_ok is not True:
         why.append("bundle 未通過 validate_dashboard_bundle")
-    if bt_result is None or not Path(bt_result).is_file():
-        why.append("沒有回測結果檔")
+    try:
+        ok = bt_result is not None and Path(bt_result).is_file() and Path(bt_result).stat().st_size > 0
+    except (OSError, TypeError):
+        ok = False
+    if not ok:
+        why.append("沒有回測結果檔（需存在且非空）")
     return why
