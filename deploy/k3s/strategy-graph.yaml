@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
         - name: web
-          image: gs/strategy-graph:REPLACE_SHA
+          image: gs/strategy-graph:184dff3
           imagePullPolicy: Never
           # P0：不掛資料，狀態（.cache、ledger）只存在容器內、重啟即清空，所以 P0 的實例不可對員工開放或拿來「執行」。
           #     （--fixture 模式需要主直譯器有 zipline／tejapi，映像刻意不裝，故不用。）
