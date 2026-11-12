@@ -28,7 +28,7 @@ RUN python -m venv /app/.venv-bt && /app/.venv-bt/bin/pip install -r requirement
 
 COPY . .
 COPY --from=ui /ui/dist /app/strategies/_common/graph/ui/dist
-RUN useradd -u 10001 -m app && mkdir -p /app/data /app/.graph-runs /app/log && chown 10001 /app/data /app/.graph-runs /app/log
+RUN useradd -u 10001 -m app && mkdir -p /app/data /app/.graph-runs /app/.cache /app/log && chown 10001 /app/data /app/.graph-runs /app/.cache /app/log
 USER 10001
 
 EXPOSE 9112

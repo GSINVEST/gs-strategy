@@ -1,4 +1,4 @@
-# 策略圖（Live Strategy Graph / StratyUI）on k3s。P0：先以 fixture 模式起來（不碰 ledger、不連 TEJ／LLM）。
+# 策略圖（Live Strategy Graph / StratyUI）on k3s。P0：不掛資料、狀態在容器內（不碰正式 ledger、不連 TEJ／LLM）。
 # 資料放 hostPath /srv/gs-data/strategy-graph（uid 10001 可寫）：data/ graph-runs/ log/ zipline/。
 #
 # ⚠ 認證邊界：伺服器信任 X-Auth-Request-Email（只在 Host 為 public-host 時）。該標頭是 wiki-caddy 的 oidc_guard 設定的，
@@ -23,9 +23,10 @@ spec:
         - name: web
           image: gs/strategy-graph:REPLACE_SHA
           imagePullPolicy: Never
-          # P0：--fixture 不可覆寫儲存位置，且不寫 ledger。P1 起去掉 --fixture 並掛資料。
-          args: ["python", "-m", "strategies._common.graph", "ui", "--fixture",
-                 "--graph", "strategies/tsmom_tx_mtx/graph.json", "--port", "9112",
+          # P0：不掛資料，狀態（.cache、ledger）只存在容器內、重啟即清空，所以 P0 的實例不可對員工開放或拿來「執行」。
+          #     （--fixture 模式需要主直譯器有 zipline／tejapi，映像刻意不裝，故不用。）
+          args: ["python", "-m", "strategies._common.graph", "ui",
+                 "--graph", "strategies/llm_view_tx/graph.json", "--port", "9112",
                  "--bind", "0.0.0.0", "--public-host", "strategy.gsinvest.com"]
           ports: [{containerPort: 9112}]
           readinessProbe:
