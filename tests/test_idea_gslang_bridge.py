@@ -94,9 +94,9 @@ def test_advance_unsupported_defers(tmp_path):
 @needs_formal
 def test_gen_python_refuses_todo_constants():
     r = gb.compile_gsl(SMA_GSL.replace("參數 window = 200", "參數 window = TODO(人)"), "x", FORMAL)
-    if r.ok:                            # 編譯可通過（TODO 降階成 IR todo 物件），codegen 必須拒絕
-        with pytest.raises(gb.CodegenFailed):
-            gb.gen_python(r.ir, FORMAL)
+    assert r.ok                         # 編譯可通過（TODO 降階成 IR todo 物件），codegen 必須拒絕
+    with pytest.raises(gb.CodegenFailed):
+        gb.gen_python(r.ir, FORMAL)
 
 
 @needs_formal
@@ -109,3 +109,35 @@ def test_draft_uses_gateway_prompt():
 
     out = gb.draft_gsl(_card(hypothesis="站上均線做多"), llm, FORMAL)
     assert out.lstrip().startswith("策略") and "站上均線做多" in seen["u"] and "Gslang" in seen["s"]
+
+
+@needs_formal
+def test_gen_python_success():
+    src = SMA_GSL.replace("TODO(人)", "1").replace("壓力 跳空 點數=1", "壓力 跳空 點數=100")
+    r = gb.compile_gsl(src, "x", FORMAL)
+    assert r.ok
+    code = gb.gen_python(r.ir, FORMAL)
+    assert "initialize" in code and "handle_data" in code
+
+
+@needs_formal
+def test_advance_rejects_non_triaged_without_side_effects(tmp_path):
+    c = IdeaCard(id="sma_trend", source="s", title="t")   # status=new
+    with pytest.raises(ValueError):
+        gb.advance_card_to_fsm(c, SMA_GSL, tmp_path, FORMAL)
+    assert list(tmp_path.iterdir()) == []
+    assert c.status == "new" and c.gsl_path == "" and c.ir_path == "" and c.reason == ""
+
+
+@needs_formal
+def test_import_rejects_second_root(tmp_path):
+    gb.load_formal(FORMAL)
+    other = tmp_path / "scripts" / "formal"
+    other.mkdir(parents=True)
+    (other / "gslang_compiler.py").write_text("", encoding="utf-8")
+    with pytest.raises(gb.FormalUnavailable):
+        gb.load_formal(str(tmp_path))
+
+
+def test_strip_fence_crlf():
+    assert gb._strip_fence("```gsl\r\n策略 a\r\n```").startswith("策略 a")

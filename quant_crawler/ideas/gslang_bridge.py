@@ -1,6 +1,7 @@
 # quant_crawler/ideas/gslang_bridge.py
 """橋接 genesis-deck 的 Gslang 編譯器／codegen（唯讀快照，由 GDECK_FORMAL 指向）。
 
+Gslang 快照在一個行程內是單例（模組進 sys.modules 後不再切換 root）。
 不複製編譯器：複製會讓語言版本與桌面版／gateway 漂移。快照 sha 記在 $GDECK_FORMAL/SNAPSHOT_SHA。
 """
 from __future__ import annotations
@@ -48,7 +49,11 @@ def _import(name: str, path: Path):
     s = str(path)
     if s not in sys.path:
         sys.path.insert(0, s)
-    return importlib.import_module(name)
+    mod = importlib.import_module(name)
+    f = Path(getattr(mod, "__file__", "") or "").resolve()
+    if path.resolve() not in f.parents:
+        raise FormalUnavailable(f"本行程已載入另一個 Gslang 快照 {f.parent}，不能再切到 {path}")
+    return mod
 
 
 def load_formal(root: str | None = None):
@@ -58,7 +63,7 @@ def load_formal(root: str | None = None):
 
 
 def _strip_fence(text: str) -> str:
-    m = re.search(r"```(?:gsl|gslang)?\n(.*?)```", text, re.S)
+    m = re.search(r"```(?:gsl|gslang)?\r?\n(.*?)```", text, re.S)
     return (m.group(1) if m else text).strip() + "\n"
 
 
@@ -90,6 +95,8 @@ def gen_python(ir: dict, root: str | None = None) -> str:
 
 
 def advance_card_to_fsm(card: IdeaCard, gsl: str, out_dir: Path, root: str | None = None) -> CompileResult:
+    if card.status != "triaged":
+        raise ValueError(f"只有 triaged 卡片能進 fsm（目前 {card.status}）：{card.id}")
     r = compile_gsl(gsl, card.id, root)
     if r.ok:
         out_dir.mkdir(parents=True, exist_ok=True)
