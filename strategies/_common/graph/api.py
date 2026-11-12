@@ -1,5 +1,6 @@
 """Local JSON API; all mutations require same-origin application/json requests."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import hmac
 import json
 import mimetypes
 from pathlib import Path
@@ -12,13 +13,16 @@ from .service import GraphConflict, json_value, restore_sidecar, user_message
 
 class GraphHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
-    def __init__(self, address, service, ui_dist=None, public_hosts=()):
+    def __init__(self, address, service, ui_dist=None, public_hosts=(), proxy_token=None):
         self.service = service
         self.ui_dist = Path(ui_dist).resolve() if ui_dist else None
         # Names a trusted reverse proxy (e.g. Caddy + OIDC on the LAN) serves us
         # under. The socket itself stays bound to loopback; these only widen the
         # Host/Origin checks for requests that arrive through that proxy.
         self.public_hosts = frozenset(h.lower() for h in public_hosts)
+        # 設定後，走 public host 的請求必須帶 X-Gs-Proxy-Token（由 OIDC 反向代理在驗證後加上）。
+        # 容器（NodePort）部署時網路層擋不住直連者，靠這個共用密鑰確保身分標頭只來自代理。
+        self.proxy_token = proxy_token or None
         super().__init__(address, Handler)
 
 
@@ -63,6 +67,9 @@ class Handler(BaseHTTPRequestHandler):
             public = host.lower().removesuffix(':80') if host.lower().removesuffix(':80') in self.server.public_hosts else None
             if host not in allowed and public is None:
                 return self.reply(403, {'error': 'local Host required'})
+            if public and self.server.proxy_token is not None and not hmac.compare_digest(
+                    self.headers.get('X-Gs-Proxy-Token', '').encode(), self.server.proxy_token.encode()):
+                return self.reply(403, {'error': 'proxy token required'})
             origin = self.headers.get('Origin')
             origins = {'http://' + host} | ({f'http://{public}', f'https://{public}'} if public else set())
             if origin is not None and origin not in origins:

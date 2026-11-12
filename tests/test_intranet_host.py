@@ -101,3 +101,23 @@ def test_bind_defaults_to_loopback_and_rejects_non_ip(capsys):
     from strategies._common.graph import __main__ as m
     src = open(m.__file__, encoding='utf-8').read()
     assert "default='127.0.0.1'" in src
+
+
+def test_proxy_token_is_required_for_public_host_when_configured(tmp_path):
+    service = make_service(tmp_path)
+    server = GraphHTTPServer(('127.0.0.1', 0), service, public_hosts=['strategy.gsinvest.com'], proxy_token='s3cret')
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        pub = {'Host': 'strategy.gsinvest.com'}
+        assert request(server, 'GET', '/api/session', pub)[0] == 403
+        assert request(server, 'GET', '/api/session', {**pub, 'X-Gs-Proxy-Token': 'wrong'})[0] == 403
+        assert request(server, 'GET', '/api/session', {**pub, 'X-Gs-Proxy-Token': 's3cret'})[0] == 200
+        # 本機 Host（kubelet 探測）不受影響；偽造身分標頭也無法繞過
+        assert request(server, 'GET', '/api/session', {'Host': f'127.0.0.1:{server.server_port}'})[0] == 200
+        spoof = {**pub, 'X-Auth-Request-Email': 'ceo@gsinvest.com.tw'}
+        assert request(server, 'GET', '/api/session', spoof)[0] == 403
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()

@@ -1,5 +1,6 @@
 """python -m strategies._common.graph {run,serve,types}."""
 import argparse
+import os
 import json
 from pathlib import Path
 
@@ -29,7 +30,7 @@ def serve_ui(args):
                     # The UI retries the validated path through the existing load
                     # endpoint so its controlled edge error remains reviewable.
                     pass
-            server = GraphHTTPServer((args.bind, args.port), service, public_hosts=args.public_host,
+            server = GraphHTTPServer((args.bind, args.port), service, public_hosts=args.public_host, proxy_token=os.environ.get('GS_PROXY_TOKEN'),
                                      ui_dist=Path(__file__).parent / 'ui' / 'dist')
         print(f'Live Strategy Graph UI: http://{args.bind}:{server.server_port}', flush=True)
         server.serve_forever()
@@ -87,7 +88,7 @@ def main(argv=None):
         print(json.dumps(service.registry.describe(),ensure_ascii=False))
         return 0
     if args.command == 'serve':
-        server = GraphHTTPServer((args.bind,args.port),service,public_hosts=args.public_host)
+        server = GraphHTTPServer((args.bind,args.port),service,public_hosts=args.public_host,proxy_token=os.environ.get('GS_PROXY_TOKEN'))
         print(f'Live Strategy Graph API: http://127.0.0.1:{server.server_port}',flush=True)
         try:
             server.serve_forever()

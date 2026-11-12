@@ -55,6 +55,9 @@ spec:
             - {name: GS_ZIPLINE_TEJ_ROOT, value: /home/app/gs-zipline-tej}
             - {name: QD_API_BASE, value: "http://192.168.0.139:15060/api/v1"}
             - {name: NUMEXPR_MAX_THREADS, value: "64"}
+            # 走 public host 的請求必須帶 X-Gs-Proxy-Token（wiki-caddy 在 OIDC 通過後加上）；Secret 由人建立
+            - name: GS_PROXY_TOKEN
+              valueFrom: {secretKeyRef: {name: strategy-graph-proxy, key: GS_PROXY_TOKEN}}
             - name: GS_LLM_API_KEY
               valueFrom: {secretKeyRef: {name: strategy-graph-llm, key: GS_LLM_API_KEY}}
             - name: TEJAPI_KEY
