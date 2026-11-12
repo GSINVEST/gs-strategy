@@ -3,10 +3,12 @@ import { createRoot } from "react-dom/client";
 import {
   ReactFlow,
   Background,
+  BaseEdge,
   Controls,
   Handle,
   Position,
   ViewportPortal,
+  getSmoothStepPath,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import "@fontsource/ibm-plex-sans/400.css";
@@ -16,6 +18,7 @@ import "@fontsource/noto-sans-tc/400.css";
 import "./style.css";
 import { Replay } from "./Replay";
 import { Fsm, FsmBody } from "./FsmPanel";
+import { StrategyMenu, Results } from "./Pool";
 import { humanizeOutputs } from "./humanize";
 import {
   api,
@@ -34,6 +37,8 @@ import {
   fmt,
   edgeId,
   costText,
+  edgeLanes,
+  STAGE_WIDTH,
   initialFit,
   pollJob,
   resumeOrStart,
@@ -284,6 +289,17 @@ function Result({ state = {} }) {
         <small>
           事前誤差中位數 {fmt(p.pre_cutoff?.median_abs_pct_error)}%（{p.pre_cutoff?.answered}/{p.pre_cutoff?.n}）・
           事後 {fmt(p.post_cutoff?.median_abs_pct_error)}%（{p.post_cutoff?.answered}/{p.post_cutoff?.n}）
+        </small>
+      </div>
+    );
+  }
+  if (o.MonteCarlo) {
+    const m = o.MonteCarlo;
+    return (
+      <div className="scalar summary-card">
+        Sharpe 中位 {fmt(m.sharpe?.p50)}（5–95%：{fmt(m.sharpe?.p05)}～{fmt(m.sharpe?.p95)}）
+        <small>
+          {m.n_paths} 條路徑・P(Sharpe≤0) {fmt(m.prob_sharpe_le_0)}・MDD 中位 {fmt(m.max_drawdown?.p50)}・不增加 N
         </small>
       </div>
     );
@@ -559,6 +575,19 @@ export function GraphNode({ id, data }) {
   );
 }
 const nodeTypes = { instrument: GraphNode };
+function LaneEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition,
+                    style, data, selected }) {
+  const [path] = getSmoothStepPath({
+    sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition,
+    borderRadius: 8, offset: 12,
+    ...(data?.laneX != null ? { centerX: data.laneX } : {}),
+  });
+  return (
+    <BaseEdge id={id} path={path} interactionWidth={14}
+      className={`lane-edge ${selected ? "selected" : ""}`} style={style} />
+  );
+}
+const edgeTypes = { lane: LaneEdge };
 export function Drawer({ id, close, revision }) {
   const [data, setData] = useState(null),
     [full, setFull] = useState(null),
@@ -714,6 +743,7 @@ function App() {
     [showLoad, setShowLoad] = useState(false),
     [showReplay, setShowReplay] = useState(false),
     [showFsm, setShowFsm] = useState(false),
+    [showResults, setShowResults] = useState(false),
     [revision, setRevision] = useState(0),
     [flash, setFlash] = useState(false);
   const flow = useRef(null);
@@ -973,7 +1003,7 @@ function App() {
         .sort(
           (a, b) => (own(positions, a.id)?.y || 0) - (own(positions, b.id)?.y || 0),
         )) {
-        result[n.id] = { x: 24 + c * 274, y };
+        result[n.id] = { x: 24 + c * STAGE_WIDTH, y };
         y += (own(measured, n.id)?.height || 200) + 16;
       }
     }
@@ -987,7 +1017,7 @@ function App() {
         type: "instrument",
         measured: own(measured, n.id),
         position: own(layout, n.id) ||
-          own(autoPositions, n.id) || { x: 24 + column(n) * 274, y: 75 },
+          own(autoPositions, n.id) || { x: 24 + column(n) * STAGE_WIDTH, y: 75 },
         dragHandle: ".node-title",
         data: {
           node: n,
@@ -1023,7 +1053,7 @@ function App() {
   }, [measured, nodes]);
   function fitAll() {
       if (!nodes.length) return;
-      const right = Math.max(1390, ...nodes.map((n) => n.position.x + 240));
+      const right = Math.max(5 * STAGE_WIDTH + 20, ...nodes.map((n) => n.position.x + 240));
       const bottom =
         Math.max(
           ...nodes.map((n) => n.position.y + (own(measured, n.id)?.height || 200)),
@@ -1033,6 +1063,19 @@ function App() {
         { padding: 0.025, duration: 0 },
       );
   }
+  const lane = useMemo(() => {
+    const boxes = Object.create(null);
+    for (const n of nodes) {
+      const ports = Object.keys(own(types, n.data.node.type)?.outputs || {});
+      boxes[n.id] = {
+        x: n.position.x, y: n.position.y,
+        width: own(measured, n.id)?.width || 240,
+        // Output handles sit below the title in declaration order.
+        portY: (port) => 48 + Math.max(0, ports.indexOf(port)) * 20,
+      };
+    }
+    return edgeLanes(doc?.graph?.edges || [], boxes);
+  }, [nodes, measured, types, doc?.graph?.edges]);
   const edges =
     doc?.graph?.edges.map((e) => ({
       id: edgeId(e),
@@ -1041,13 +1084,13 @@ function App() {
       target: e.to[0],
       targetHandle: e.to[1],
       selected: selectedEdges.has(edgeId(e)),
-      type: "smoothstep",
+      type: "lane",
+      data: { laneX: lane(e) },
       animated: own(states, e.to[0])?.status === "running",
       style: {
         stroke: portColor(
           own(own(types, doc.graph.nodes.find((n) => n.id === e.from[0])?.type)?.outputs, e.from[1]),
         ),
-        strokeWidth: 2,
       },
     })) || [];
   function valid(c) {
@@ -1095,6 +1138,31 @@ function App() {
       await handleError(e);
     }
   }
+  async function selectStrategy(id) {
+    if (!id || id === docRef.current?.graph?.strategy) return;
+    if (submittingRef.current || scheduler.current?.pending || active.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
+    try {
+      await cancelPreview();
+      const d = await api("/strategies/select", { id, expected_revision: docRef.current.revision });
+      documentUpdate(d);
+      setSelected(null);
+      setShowReplay(false);
+      setWarnings([]);
+      const l = await api("/layout");
+      setLayout(l.positions);
+      setMeasured({});
+      fitInitial.current = initialFit();
+      await refresh();
+      scheduler.current.start();
+    } catch (e) {
+      await handleError(e);
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
+  }
   async function load() {
     if (submittingRef.current || scheduler.current?.pending || active.current) return;
     submittingRef.current = true;
@@ -1122,6 +1190,7 @@ function App() {
           <span className="brand-mark">▥</span>
           <b>{doc?.graph?.strategy || "Live Strategy Graph"}</b>
         </div>
+        <StrategyMenu current={doc?.graph?.strategy} disabled={busy} onSelect={selectStrategy} />
         <span
           className="hash mono"
           data-testid="graph-hash"
@@ -1139,6 +1208,9 @@ function App() {
         </button>
         <button disabled={busy} onClick={() => setShowLoad((v) => !v)}>
           從產出載入
+        </button>
+        <button data-testid="results" onClick={() => setShowResults(true)}>
+          結果
         </button>
         {doc?.graph?.nodes?.some((n) => n.type === "agent.llm_view") && (
           <button data-testid="replay" onClick={() => setShowReplay(true)}>
@@ -1233,6 +1305,7 @@ function App() {
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             minZoom={0.35}
             maxZoom={1.6}
             nodesConnectable={!busy}
@@ -1310,7 +1383,7 @@ function App() {
                 {stages.map((s, i) => (
                   <div
                     className="stage-band"
-                    style={{ left: i * 274, width: 274 }}
+                    style={{ left: i * STAGE_WIDTH, width: STAGE_WIDTH }}
                     key={s}
                   >
                     <span className="stage-label">
@@ -1319,7 +1392,7 @@ function App() {
                     </span>
                   </div>
                 ))}
-                <div className="n-boundary">
+                <div className="n-boundary" style={{ left: 3 * STAGE_WIDTH + 2 }}>
                   <span>上游預覽區・不計 N</span>
                   <span>試驗區・每個新組態 N+1</span>
                 </div>
@@ -1340,6 +1413,9 @@ function App() {
       </div>
       {showReplay && <Replay close={() => setShowReplay(false)} revision={revision} />}
       {showFsm && <Fsm close={() => setShowFsm(false)} revision={revision} />}
+      {showResults && (
+        <Results strategy={doc?.graph?.strategy} close={() => setShowResults(false)} revision={revision} />
+      )}
       <footer>
         <span>
           LIVE STRATEGY GRAPH <b>研究量測台</b>

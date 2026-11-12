@@ -26,6 +26,16 @@
         "Returns"
       ],
       "to": [
+        "montecarlo",
+        "Returns"
+      ]
+    },
+    {
+      "from": [
+        "backtest",
+        "Returns"
+      ],
+      "to": [
         "report",
         "Returns"
       ]
@@ -195,6 +205,16 @@
       "id": "ledger",
       "params": {},
       "type": "ledger.selection_n"
+    },
+    {
+      "id": "montecarlo",
+      "params": {
+        "mean_block": 10.0,
+        "n_paths": 2000,
+        "periods_per_year": 252,
+        "seed": 7
+      },
+      "type": "validation.monte_carlo"
     },
     {
       "id": "probe",

@@ -1,20 +1,28 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { api, fmt } from "./model";
 
-const W = 960;
-const H = { price: 150, equity: 120, position: 34, gap: 14 };
+const PAD = { left: 64, right: 16, top: 10, bottom: 22 };
+const GAP = 14;
+const HEIGHT_KEY = "replay-chart-height";
 const pct = (v) => (v == null ? "—" : `${(v * 100).toFixed(2)}%`);
 const dirText = { 1: "做多", "-1": "做空", 0: "空手" };
+const num = (v, d = 0) => (v == null ? "—" : Number(v).toLocaleString("zh-TW", { maximumFractionDigits: d }));
 
-function scale(values, lo, hi) {
+function extent(values, pad = 0.04) {
   const finite = values.filter((v) => v != null && Number.isFinite(v));
-  if (!finite.length) return () => (lo + hi) / 2;
-  let min = Math.min(...finite), max = Math.max(...finite);
-  if (min === max) { min -= 1; max += 1; }
-  return (v) => hi - ((v - min) / (max - min)) * (hi - lo);
+  if (!finite.length) return [0, 1];
+  let lo = Math.min(...finite), hi = Math.max(...finite);
+  if (lo === hi) { lo -= 1; hi += 1; }
+  const m = (hi - lo) * pad;
+  return [lo - m, hi + m];
 }
 
-function path(days, key, x, y) {
+function ticks([lo, hi], count = 3) {
+  const step = (hi - lo) / count;
+  return Array.from({ length: count + 1 }, (_, i) => lo + step * i);
+}
+
+function linePath(days, key, x, y) {
   let d = "", open = false;
   days.forEach((day, i) => {
     const v = day[key];
@@ -25,62 +33,150 @@ function path(days, key, x, y) {
   return d;
 }
 
-export function ReplayChart({ data, cursor, onPick }) {
+function useWidth(ref) {
+  const [width, setWidth] = useState(900);
+  useEffect(() => {
+    if (!ref.current || typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(([entry]) => setWidth(Math.max(320, entry.contentRect.width)));
+    observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, [ref]);
+  return width;
+}
+
+export function ReplayChart({ data, cursor, onPick, height }) {
+  const box = useRef(null);
+  const W = useWidth(box);
+  const [hover, setHover] = useState(null);
   const days = data.days;
   const n = Math.max(1, days.length - 1);
-  const x = (i) => 40 + (i / n) * (W - 56);
-  const top = 8, eqTop = top + H.price + H.gap, posTop = eqTop + H.equity + H.gap;
-  const height = posTop + H.position + 18;
-  const yPrice = scale(days.map((d) => d.settle), top, top + H.price);
-  const yEq = scale(days.flatMap((d) => [d.equity, d.benchmark]), eqTop, eqTop + H.equity);
+  const plotW = W - PAD.left - PAD.right;
+  const x = (i) => PAD.left + (i / n) * plotW;
+  // Panel heights scale with the user-chosen chart height.
+  const inner = height - PAD.top - PAD.bottom - 2 * GAP;
+  const hPrice = inner * 0.45, hEq = inner * 0.38, hPos = inner * 0.17;
+  const top = PAD.top, eqTop = top + hPrice + GAP, posTop = eqTop + hEq + GAP;
+  const priceRange = extent(days.map((d) => d.settle));
+  const eqRange = extent(days.flatMap((d) => [d.equity, d.benchmark]));
+  const yPrice = (v) => top + hPrice - ((v - priceRange[0]) / (priceRange[1] - priceRange[0])) * hPrice;
+  const yEq = (v) => eqTop + hEq - ((v - eqRange[0]) / (eqRange[1] - eqRange[0])) * hEq;
+  const posMid = posTop + hPos / 2;
   const firstClean = days.findIndex((d) => !d.contaminated);
   const dirtyEnd = firstClean < 0 ? days.length - 1 : firstClean;
   const index = new Map(days.map((d, i) => [d.date, i]));
   const cursorIndex = index.get(cursor);
   const folds = data.folds.map((f) => index.get(f.test_start)).filter((i) => i != null);
-  const pick = (event) => {
-    const box = event.currentTarget.getBoundingClientRect();
-    const rel = ((event.clientX - box.left) / box.width) * W;
-    const i = Math.round(((rel - 40) / (W - 56)) * n);
-    if (i >= 0 && i < days.length) onPick(days[i].date);
+  const dateTicks = Array.from({ length: 6 }, (_, k) => Math.round((k / 5) * (days.length - 1)));
+  const at = (event) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const i = Math.round(((event.clientX - rect.left - PAD.left) / plotW) * n);
+    return i >= 0 && i < days.length ? i : null;
+  };
+  const h = hover != null ? days[hover] : null;
+  return (
+    <div className="replay-chart-box" ref={box} style={{ height }}>
+      <svg className="replay-chart" width={W} height={height} role="img" aria-label="價格、權益與部位回放圖"
+           onMouseMove={(e) => setHover(at(e))} onMouseLeave={() => setHover(null)}
+           onClick={(e) => { const i = at(e); if (i != null) onPick(days[i].date); }}>
+        <defs>
+          <pattern id="dirty" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2="6" className="dirty-hatch" />
+          </pattern>
+        </defs>
+        {dirtyEnd > 0 && (
+          <g>
+            <rect x={x(0)} y={top} width={x(dirtyEnd) - x(0)} height={posTop + hPos - top}
+                  fill="url(#dirty)" className="dirty-zone" />
+            <text x={x(0) + 6} y={top + 12} className="zone-label">知識截止前・已污染・不計績效</text>
+          </g>
+        )}
+        {ticks(priceRange).map((v, k) => (
+          <g key={`p${k}`}>
+            <line x1={PAD.left} x2={W - PAD.right} y1={yPrice(v)} y2={yPrice(v)} className="grid" />
+            <text x={PAD.left - 6} y={yPrice(v) + 3} textAnchor="end" className="tick">{num(v)}</text>
+          </g>
+        ))}
+        {ticks(eqRange).map((v, k) => (
+          <g key={`e${k}`}>
+            <line x1={PAD.left} x2={W - PAD.right} y1={yEq(v)} y2={yEq(v)} className="grid" />
+            <text x={PAD.left - 6} y={yEq(v) + 3} textAnchor="end" className="tick">{v.toFixed(2)}</text>
+          </g>
+        ))}
+        {[1, 0, -1].map((v) => (
+          <text key={`q${v}`} x={PAD.left - 6} y={posMid - (v * hPos) / 2 + 3} textAnchor="end" className="tick">
+            {v > 0 ? "+1" : v}
+          </text>
+        ))}
+        <text className="axis-title" transform={`translate(12 ${top + hPrice / 2}) rotate(-90)`} textAnchor="middle">價格（點）</text>
+        <text className="axis-title" transform={`translate(12 ${eqTop + hEq / 2}) rotate(-90)`} textAnchor="middle">權益（起始=1）</text>
+        <text className="axis-title" transform={`translate(12 ${posTop + hPos / 2}) rotate(-90)`} textAnchor="middle">部位</text>
+        {folds.map((i, k) => (
+          <line key={k} x1={x(i)} x2={x(i)} y1={eqTop} y2={posTop + hPos} className="fold-line" />
+        ))}
+        <path d={linePath(days, "settle", x, yPrice)} className="line price" />
+        <path d={linePath(days, "benchmark", x, yEq)} className="line benchmark" />
+        <path d={linePath(days, "equity", x, yEq)} className="line equity" />
+        {days.map((d, i) => d.position ? (
+          <rect key={d.date} x={x(i)} width={Math.max(1, plotW / n)}
+                y={d.position > 0 ? posMid - (Math.min(1, d.position) * hPos) / 2 : posMid}
+                height={(hPos / 2) * Math.min(1, Math.abs(d.position))}
+                className={d.position > 0 ? "pos long" : "pos short"} />
+        ) : null)}
+        <line x1={PAD.left} x2={W - PAD.right} y1={posMid} y2={posMid} className="zero" />
+        {dateTicks.map((i) => (
+          <text key={`d${i}`} x={x(i)} y={height - 6} textAnchor={i === 0 ? "start" : i === days.length - 1 ? "end" : "middle"}
+                className="tick">{days[i]?.date}</text>
+        ))}
+        {cursorIndex != null && (
+          <line x1={x(cursorIndex)} x2={x(cursorIndex)} y1={top} y2={posTop + hPos} className="cursor" />
+        )}
+        {hover != null && (
+          <g className="hover">
+            <line x1={x(hover)} x2={x(hover)} y1={top} y2={posTop + hPos} className="hover-line" />
+            {h.settle != null && <circle cx={x(hover)} cy={yPrice(h.settle)} r={3} className="dot price" />}
+            {h.equity != null && <circle cx={x(hover)} cy={yEq(h.equity)} r={3} className="dot equity" />}
+            {h.benchmark != null && <circle cx={x(hover)} cy={yEq(h.benchmark)} r={3} className="dot benchmark" />}
+          </g>
+        )}
+      </svg>
+      {h && (
+        <div className="replay-tooltip" style={{ left: Math.min(x(hover) + 12, W - 210), top: 8 }}>
+          <b className="mono">{h.date}</b>
+          <span>{h.contaminated ? "污染區間・不計績效" : h.oos ? "樣本外（OOS）" : "樣本內"}</span>
+          <span>價格 <b>{num(h.settle)}</b> 點</span>
+          <span>策略權益 <b>{h.equity == null ? "—" : `${h.equity.toFixed(4)}（${pct(h.equity - 1)}）`}</b></span>
+          <span>買進持有 <b>{h.benchmark == null ? "—" : `${h.benchmark.toFixed(4)}（${pct(h.benchmark - 1)}）`}</b></span>
+          <span>部位 <b>{h.position == null ? "—" : `${h.position > 0 ? "多" : h.position < 0 ? "空" : "空手"} ${Math.abs(h.position).toFixed(2)} 倍`}</b></span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Splitter({ height, setHeight }) {
+  const start = (event) => {
+    event.preventDefault();
+    const y0 = event.clientY, h0 = height;
+    const move = (e) => setHeight(Math.min(Math.max(160, h0 + e.clientY - y0), Math.round(window.innerHeight * 0.75)));
+    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
   };
   return (
-    <svg className="replay-chart" viewBox={`0 0 ${W} ${height}`} onClick={pick} role="img"
-         aria-label="價格、權益與部位回放圖">
-      <defs>
-        <pattern id="dirty" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-          <line x1="0" y1="0" x2="0" y2="6" className="dirty-hatch" />
-        </pattern>
-      </defs>
-      {dirtyEnd > 0 && (
-        <g>
-          <rect x={x(0)} y={top} width={x(dirtyEnd) - x(0)} height={posTop + H.position - top}
-                fill="url(#dirty)" className="dirty-zone" />
-          <text x={x(0) + 6} y={top + 14} className="zone-label">知識截止前・已污染・不計績效</text>
-        </g>
-      )}
-      {folds.map((i, k) => (
-        <line key={k} x1={x(i)} x2={x(i)} y1={eqTop} y2={posTop + H.position} className="fold-line" />
-      ))}
-      <text x={4} y={top + 10} className="axis-label">價格</text>
-      <path d={path(days, "settle", x, yPrice)} className="line price" />
-      <text x={4} y={eqTop + 10} className="axis-label">權益</text>
-      <path d={path(days, "benchmark", x, yEq)} className="line benchmark" />
-      <path d={path(days, "equity", x, yEq)} className="line equity" />
-      <text x={4} y={posTop + 12} className="axis-label">部位</text>
-      {days.map((d, i) => d.position ? (
-        <rect key={d.date} x={x(i)} width={Math.max(1, (W - 56) / n)} y={d.position > 0 ? posTop : posTop + H.position / 2}
-              height={H.position / 2 * Math.min(1, Math.abs(d.position))}
-              className={d.position > 0 ? "pos long" : "pos short"} />
-      ) : null)}
-      <line x1={40} x2={W - 16} y1={posTop + H.position / 2} y2={posTop + H.position / 2} className="zero" />
-      {cursorIndex != null && (
-        <line x1={x(cursorIndex)} x2={x(cursorIndex)} y1={top} y2={posTop + H.position} className="cursor" />
-      )}
-      <text x={40} y={height - 4} className="axis-label">{days[0]?.date}</text>
-      <text x={W - 16} y={height - 4} textAnchor="end" className="axis-label">{days[days.length - 1]?.date}</text>
-    </svg>
+    <div className="replay-splitter" role="separator" aria-orientation="horizontal" aria-label="拖曳調整圖表高度"
+         onPointerDown={start} title="拖曳調整圖表高度">
+      <span />
+    </div>
   );
+}
+
+function storedHeight() {
+  try {
+    const v = Number(window.localStorage.getItem(HEIGHT_KEY));
+    return Number.isFinite(v) && v >= 160 ? v : 240;
+  } catch {
+    return 240;
+  }
 }
 
 function Features({ features }) {
@@ -100,6 +196,10 @@ function Features({ features }) {
 export function Replay({ close, revision }) {
   const [data, setData] = useState(null), [error, setError] = useState("");
   const [at, setAt] = useState(0), [playing, setPlaying] = useState(false);
+  const [height, setHeight] = useState(storedHeight);
+  useEffect(() => {
+    try { window.localStorage.setItem(HEIGHT_KEY, String(Math.round(height))); } catch { /* per-viewer convenience only */ }
+  }, [height]);
   useEffect(() => {
     let alive = true;
     api("/replay").then((d) => { if (alive) setData(d); }).catch((e) => alive && setError(e.message));
@@ -118,6 +218,11 @@ export function Replay({ close, revision }) {
     }), 900);
     return () => clearInterval(t);
   }, [playing, decisions.length]);
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") close(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [close]);
   const card = decisions[at];
   const byDate = useMemo(() => new Map(decisions.map((d, i) => [d.date, i])), [decisions]);
   const pickDay = (date) => {
@@ -128,7 +233,8 @@ export function Replay({ close, revision }) {
   return (
     <div className="replay-overlay" role="dialog" aria-label="walk-forward 回放">
       <header>
-        <div>
+        <button className="replay-back" onClick={close} data-testid="replay-back">← 返回策略圖</button>
+        <div className="replay-title">
           <small>WALK-FORWARD REPLAY</small>
           <h2>回放：資料 → 推論 → 決策 → 損益</h2>
         </div>
@@ -164,7 +270,8 @@ export function Replay({ close, revision }) {
             <span className="lg dirty">污染區間</span>
             <span className="lg fold">fold 起點</span>
           </div>
-          <ReplayChart data={data} cursor={card?.date} onPick={pickDay} />
+          <ReplayChart data={data} cursor={card?.date} onPick={pickDay} height={height} />
+          <Splitter height={height} setHeight={setHeight} />
           <div className="replay-controls">
             <button onClick={() => setAt((i) => Math.max(0, i - 1))} aria-label="上一個決策">◀</button>
             <button onClick={() => setPlaying((p) => !p)}>{playing ? "暫停" : "播放"}</button>
@@ -173,6 +280,7 @@ export function Replay({ close, revision }) {
                    onChange={(e) => setAt(Number(e.target.value))} aria-label="決策日" />
             <span className="mono">{card?.date}</span>
           </div>
+          <div className="replay-bottom">
           {card && (
             <div className="replay-card">
               <section>
@@ -235,6 +343,7 @@ export function Replay({ close, revision }) {
               </table>
             </details>
           )}
+          </div>
         </>
       )}
     </div>

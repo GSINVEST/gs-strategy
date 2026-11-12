@@ -45,20 +45,50 @@ export const estimateText = (e) =>
     : e.already_recorded
       ? "執行・快取重播，N 不變"
       : `執行・N ${e.selection_n}→${e.next_selection_n}`;
-export const portColor = (type) => {
-  const t = baseType(type);
-  return ["Bars", "ContinuousBars", "PriceBars", "MarketView", "Docs"].includes(t)
-    ? "var(--port-bars)"
-    : ["Score", "Sigma", "Direction", "RawWeights", "Weights", "Signals"].includes(t)
-      ? "var(--port-signal)"
-      : ["Returns", "Positions", "WalkForward"].includes(t)
-        ? "var(--port-performance)"
-        : "var(--muted)";
+// One hue per port type so every wire can be told apart; port dots use the same map.
+export const TYPE_COLORS = {
+  Bars: "#3987e5", ContinuousBars: "#5b9cf0", PriceBars: "#3987e5",
+  MarketView: "#22b8cf", Docs: "#b084f5",
+  Score: "#199e70", Sigma: "#2fb5a0", Direction: "#3fb950",
+  RawWeights: "#8bc34a", Weights: "#a5d65a", Signals: "#3fb950",
+  CostModel: "#a1887f",
+  Returns: "#d95926", Positions: "#e8a33d", WalkForward: "#f06292",
+  LedgerN: "#9aa7b8", Report: "#f2cc60", Facts: "#7aa2f7",
+  Prescription: "#c792ea", ProbeReport: "#ff6b6b",
+  StrategyBundle: "#3987e5", StrategySpec: "#b084f5", RunInfo: "#9aa7b8", MonteCarlo: "#ffb86c",
 };
+export const portColor = (type) => TYPE_COLORS[baseType(type)] || "var(--muted)";
+
+// Lane routing: every edge turns in the column gap just left of its target, and
+// each (gap, source port) gets its own vertical lane, so fan-outs share one trunk
+// and different wires never overlap in the gap.
+export function edgeLanes(edges, boxes) {
+  const lanes = new Map();
+  const byGap = new Map();
+  for (const e of edges) {
+    const s = boxes[e.from[0]], t = boxes[e.to[0]];
+    if (!s || !t || t.x <= s.x) continue;
+    const gap = Math.round(t.x);
+    const key = `${gap}|${e.from[0]}|${e.from[1]}`;
+    if (!byGap.has(gap)) byGap.set(gap, new Map());
+    const group = byGap.get(gap);
+    if (!group.has(key)) group.set(key, { key, y: s.y + s.portY(e.from[1]), left: s.x + s.width });
+  }
+  for (const [gap, group] of byGap) {
+    const list = [...group.values()].sort((a, b) => a.y - b.y);
+    const start = Math.max(...list.map((l) => l.left)) + 6, end = gap - 6;
+    const width = Math.max(4, end - start);
+    list.forEach((l, i) => lanes.set(l.key, start + (width * (i + 1)) / (list.length + 1)));
+  }
+  return (e) => {
+    const t = boxes[e.to[0]];
+    return t ? lanes.get(`${Math.round(t.x)}|${e.from[0]}|${e.from[1]}`) : undefined;
+  };
+}
 export const portShape = (type) =>
   ["CostModel"].includes(baseType(type))
     ? "square"
-    : ["LedgerN", "Report", "Facts", "Prescription", "ProbeReport"].includes(baseType(type))
+    : ["LedgerN", "Report", "Facts", "Prescription", "ProbeReport", "MonteCarlo"].includes(baseType(type))
       ? "diamond"
       : "circle";
 export const names = {
@@ -80,7 +110,12 @@ export const names = {
   docs: "研究檢索（RAG）",
   agent: "LLM 判斷",
   probe: "記憶探測",
+  bundle: "策略池 bundle",
+  spec: "策略宣告",
+  montecarlo: "蒙地卡羅重抽",
 };
+// Column pitch: card width (~240px) plus a gap wide enough for routed wire lanes.
+export const STAGE_WIDTH = 320;
 export const stages = ["資料", "特徵", "訊號與部位", "回測", "驗證與檢定"];
 export const column = (n) =>
   n.type.startsWith("data.")

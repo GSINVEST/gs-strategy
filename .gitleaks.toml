@@ -10,4 +10,7 @@ description = "graph ledger content hashes"
 regexTarget = "match"
 regexes = [
   '''(?:backtest_key|graph_hash|config_sha256)"\s*:\s*"[0-9a-f]{64}"''',
+  # tests/test_llm_codegen.py 在 884800d 用過的假密鑰（字母表＋123456），只存在於 git 歷史；
+  # 之後已改為執行期組成。全歷史掃描無法不改寫歷史就消除，故以精確字面值放行。
+  '''abcdefghijklmnopqrstuvwxyz123456''',
 ]
