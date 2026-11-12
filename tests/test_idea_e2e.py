@@ -103,14 +103,15 @@ def _setup_admit(tmp_path, strategy_py=STRAT_OK):
     (work / "strategy.py").write_text(strategy_py, encoding="utf-8")
     (work / "e2e_x.ir.json").write_text(json.dumps(ir), encoding="utf-8")
     c.ir_path = str(work / "e2e_x.ir.json")
-    _, sha = stage_card(c, work_dir=cards / "_work", gslang_src=GSL_SRC, start=START, end=END)
+    _, sha = stage_card(c, work_dir=cards / "_work", gslang_src=GSL_SRC, start=START, end=END, n_trials=1)
     sel = select_batch([c])
     info = register_batch(sel, tmp_path / "batches", "2026-11-12T00:00:00Z", ledger, prereg_dir,
                           cards_dir=cards, config_shas={c.id: sha}, sample=(START, END))
     c = load_card(cards / "e2e_x.md")
     assert c.status == "bt_registered"
     set_status(c, "bt_done")
-    res = tmp_path / "result.pkl"
+    res = tmp_path / "results" / "e2e_x.pkl"
+    res.parent.mkdir()
     _write_result(res)
     return c, info, dict(strategies_dir=strategies, prereg_dir=prereg_dir, bt_result=res,
                          work_dir=cards / "_work", ledger=ledger, cards_dir=cards), ledger
@@ -140,6 +141,9 @@ def test_register_records_staging_sha_and_dates_from_prereg(tmp_path):
     prereg = yaml.safe_load((kw["prereg_dir"] / f"{info['batch_id']}.yaml").read_text(encoding="utf-8"))
     assert (cfg["start"], cfg["end"]) == (prereg["sample"]["start"], prereg["sample"]["end"]) == (START, END)
     assert (staged / "gslang" / "__init__.py").is_file()          # vendored，bundle 可獨立 import
+    assert (staged / "futures_setup.py").is_file()                # 產生的策略 from futures_setup import ...
+    from strategies._common.validation.report import resolve_n_trials
+    assert resolve_n_trials(cfg) == (trial["stat_decision"]["decision_path"]["n_trials"], "config")
 
 
 def test_register_then_admit_rejected_when_prereg_unfilled(tmp_path):
@@ -398,3 +402,19 @@ def test_admit_succeeds_only_after_human_fills_prereg(tmp_path):
     assert (kw["strategies_dir"] / "e2e_x" / "gslang" / "__init__.py").is_file()
     idx = yaml.safe_load((kw["strategies_dir"] / "INDEX.yaml").read_text(encoding="utf-8"))
     assert [e["id"] for e in idx["entries"]] == ["e2e_x"]
+    assert idx["entries"][0]["result_sha256"] == hashlib.sha256(b"x").hexdigest()
+
+
+def test_admit_rejects_result_not_named_results_id_pkl(tmp_path):
+    c, info, kw, _ = _setup_admit(tmp_path)
+    _fill_prereg(kw, info)
+    other = tmp_path / "elsewhere" / "e2e_x.pkl"
+    other.parent.mkdir()
+    _write_result(other)
+    kw["bt_result"] = other
+    assert any("results/e2e_x.pkl" in w for w in admit_card(c, **kw))
+    wrong = tmp_path / "results" / "other.pkl"
+    _write_result(wrong)
+    kw["bt_result"] = wrong
+    assert any("results/e2e_x.pkl" in w for w in admit_card(c, **kw))
+    assert not (kw["strategies_dir"] / "e2e_x").exists()

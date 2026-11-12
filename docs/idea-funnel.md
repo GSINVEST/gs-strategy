@@ -30,7 +30,10 @@ S5 登記   選 ≤20 個 → 寫 staging bundle → 登記 ledger（記 bundle 
 2. `python -m quant_crawler.ideas batch --register --start YYYY-MM-DD --end YYYY-MM-DD [--batch-id ID]`：
    - 對每個候選寫 **staging bundle** `ideas/_work/<id>/bundle/`（`strategy.py`、`config.yaml`、`manifest.yaml`、vendored `gslang/`）；
    - 回測起訖由 `--start/--end` 一次押定，同時寫進 prereg 草稿的 `sample.start/end` 與 bundle 的 `config.yaml`（不再寫死）；
-   - 登記 ledger，各 trial 的 `config_sha256` 是 staging bundle 的內容雜湊（所有檔案的相對路徑＋內容，排除 `__pycache__`）。
+   - bundle 根目錄含 `futures_setup.py`（自 `strategies/_common/` 複製；產生的策略會 `from futures_setup import ...`，`runner` 與 `validate_dashboard_bundle` 的 `sys.path` 不同，必須自含）；
+   - `config.yaml` 的 `validation.n_trials` 寫入登記當下的 N（與 ledger 該卡 `decision_path.n_trials` 同口徑；若登記時有其他行程同時追加，兩者可能差一個批次內的順位，以 ledger 為準）；
+   - 登記 ledger，各 trial 的 `config_sha256` 是 staging bundle 的內容雜湊（對所有檔案以「長度前綴＋相對路徑＋長度前綴＋內容」依路徑排序計算，排除 `__pycache__`/`*.pyc`）；
+   - bundle 內有任何 symlink（檔或目錄）即拒絕 staging 與入庫複製。
 3. 人填 `experiments/preregistration/<batch_id>.yaml`（見下節）。
 4. 有 `TEJAPI_KEY` 與已 ingest 的 `tquant_future` 時，`python -m quant_crawler.ideas backtest <id>` **只印出**確切指令（不代跑）：
 
@@ -42,6 +45,8 @@ S5 登記   選 ≤20 個 → 寫 staging bundle → 登記 ledger（記 bundle 
 
    runner 會把 bundle 目錄放進 `sys.path`，所以 vendored `gslang/` 可 import。沒有 `TEJAPI_KEY` 時此子命令報「回測未實跑」並 exit 3。
    需要依 prereg 的 sample 重建 staging bundle 時用 `backtest <id> --stage`（不需要 key）；重建後內容雜湊若與登記不同，入庫會被拒絕。
+   **路徑與環境**：指令的相對路徑要在含 `.venv-bt` 的主 checkout 根目錄執行（worktree 沒有 `.venv-bt`）。
+   **已承認限制**：staging 內的 `__pycache__`／pyc 不在雜湊內，無法證明回測實際執行的程式碼＝被雜湊的程式碼。
 5. 回測完成後由人把卡片 `status` 設為 `bt_done`（CLI 尚無對應子命令），再執行 `admit <id> --bt-result results/<id>.pkl`。
 
 ## 子命令
@@ -84,15 +89,19 @@ card id 規則：`^[a-z0-9][a-z0-9_]{0,63}$`；由來源名稱產生時過長截
   （若卡片仍是 `impl`，會警告需手動設為 `bt_registered`）。
 - 登記只追加：`log/trials.jsonl`、`experiments/preregistration/` 既有內容不動；寫入前先全數驗證，任何失敗都不留半成品。
   「判重＋三個寫入」包在與 `strategies/_common/graph/ledger.py` 相同協定的排他鎖（`log/trials.jsonl.lock`）內，與圖引擎、其他登記行程互斥。
-  同一天第二批必須明確指定 `--batch-id`。
+  同一天第二批必須明確指定 `--batch-id`；自訂 id 若去掉 `idea-` 前綴後符合 card id 規則（例如 `idea-bar`），
+  會與卡 `bar` 的 `t-idea-bar` 撞名而被拒絕（預設 `idea-batch-<日期>` 含連字號，不受影響）。
 
 ### ledger 行的形狀與審計
 
 登記時的 trial 沿用 `graph/ledger.py` 的 pending 慣例：`delta_n=1` 先計入 N（`n_selection_recomputed` 會上升），但 `stat_decision` 為
 `status: pending`、`rule_id: null`、`inference_available: false`，`decision_path` 只含已宣告事實（estimand／design／overlap／family／purpose／n_trials），
 **不捏造 `n_eff`**，並帶 `preregistration_id: <batch_id>`；頂層 `purpose: selection`。
-因此在回測補上完成行之前，`audit_ledger` 會對每個新 trial 回報一筆「decision_path 缺 `n_eff`」——這是預期行為，不是資料損壞；
-既有行與批次根紀錄的審計不受影響。完成行（同 `trial_id` 追加）補上 `n_eff` 後該問題消失。
+**審計副作用（需 PR 前與 owner 決定）**：`decision.audit_ledger` 對**每一行**跑 `audit_record`，pending 行因缺 `n_eff` **永久**回報一筆問題，
+而且追加完成行也不會讓它消失（`audit_ledger` 逐行檢查，舊的 pending 行仍在；完成行本身還可能多報缺 `holding_periods`）。
+受影響：`quant_crawler/webui/stat_tree.py` 的 `audit_summary()`（`auditable` 會翻成 False、`n_problems` 每批增加批次大小）與 `stat-tree.html` 徽章；
+`graph/ledger.py` 的 pending 行有同樣慣例，同樣會被報。本分支**不改** `strategies/_common/validation/`。
+PR 前需與 owner 決定：另案讓 `audit_record` 認得 pending 行，或接受審計徽章因本漏斗而變紅。
 
 ## Gslang v0.1 不支援清單（defer 的由來）
 
@@ -140,13 +149,15 @@ card id 規則：`^[a-z0-9][a-z0-9_]{0,63}$`；由來源名稱產生時過長截
 
 內容唯一來源是登記時的 staging bundle。順序：
 
-1. 預檢：卡片 `bt_done`、verdict 為 `pass_with_bounds`、回測結果檔存在且非空，**且旁附 `<結果檔>.sha256` 與內容相符**。
+1. 預檢：卡片 `bt_done`、verdict 為 `pass_with_bounds`、回測結果檔**必須是 `results/<id>.pkl`**、存在且非空，**且旁附 `<結果檔>.sha256` 與內容相符**。
 2. 讀 ledger 內該卡登記的 `config_sha256`，重算 staging bundle 雜湊，不符即拒絕（登記後被改過）。
 3. **實際執行** `check_preregistration.py`（批次登記檔）；核對 bundle 的回測起訖與 prereg 的 `sample.start/end` 一致。
 4. 把 staging bundle 複製（暫存目錄＋rename，複製後再比對雜湊）到 `strategies/<id>`，再**實際執行** `validate_dashboard_bundle.py`。
 5. 任一失敗（含驗證腳本逾時 120 秒、無法執行，一律視為未通過）即移除**自己剛建立**的 bundle 並回報原因（不更新索引、卡片維持 `bt_done`）。
    `strategies/<id>` 已存在時一律拒絕且不刪除既有目錄；`card.id` 不合法、複製失敗也轉成拒絕原因（exit 1），不丟 traceback。
-6. 全過後先寫 `strategies/INDEX.yaml`，再把卡片存成 `admitted`。
+6. 全過後先寫 `strategies/INDEX.yaml`（entry 含 `result_sha256`，即結果檔雜湊），再把卡片存成 `admitted`。
+
+**驗證器環境**：`validate_dashboard_bundle.py` 會 import 策略（進而 import `zipline`），需在裝有 zipline 的 `.venv` 內執行 `admit`，環境可能還要求 `TEJAPI_KEY`；否則驗證失敗，入庫依 fail-closed 被拒。
 
 **回測結果檔的驗證限制**：runner 輸出的是 pandas pickle。不跑回測就無法驗證其內部結構，也不應對不受信的 pickle 反序列化，
 所以 `admit` 只檢查「存在、非空、與旁附 sha256 一致」，防的是誤放或截斷的檔案，**不能防偽造**；結果內容是否真的對應這個 bundle 需人工核對。

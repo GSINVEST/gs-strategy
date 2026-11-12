@@ -84,7 +84,7 @@ def _precheck(card, bt_result):
     return gate_admission(card, batch_prereg_ok=True, bundle_ok=True, bt_result=bt_result)
 
 
-def check_result_file(bt_result) -> list[str]:
+def check_result_file(bt_result, cid: str | None = None) -> list[str]:
     """回測結果檔檢查：非空，且旁附 `<檔名>.sha256`（sha256sum 格式）與內容相符。
 
     限制：結果是 runner 輸出的 pandas pickle；不跑回測就無法驗證其結構，也不應對不受信的 pickle
@@ -93,6 +93,8 @@ def check_result_file(bt_result) -> list[str]:
     if bt_result is None:
         return ["沒有回測結果檔（需存在且非空）"]
     p = Path(bt_result)
+    if cid is not None and (p.name != f"{cid}.pkl" or p.parent.name != "results"):
+        return [f"回測結果檔必須是 results/{cid}.pkl（收到 {p.parent.name}/{p.name}）"]
     side = p.with_name(p.name + ".sha256")
     try:
         if not p.is_file() or p.stat().st_size == 0:
@@ -123,6 +125,23 @@ def _ledger_config_sha(ledger: Path, cid: str) -> str | None:
     return sha
 
 
+def _ledger_n_trials(ledger: Path, cid: str) -> int | None:
+    """ledger 內 t-idea-<id> 登記時宣告的 n_trials（staging config 的 validation.n_trials 同源）。"""
+    n = None
+    if ledger.exists():
+        for line in ledger.read_bytes().decode("utf-8", errors="replace").splitlines():
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(rec, dict) and rec.get("trial_id") == f"t-idea-{cid}":
+                try:
+                    n = int(rec["stat_decision"]["decision_path"]["n_trials"])
+                except (KeyError, TypeError, ValueError):
+                    pass
+    return n
+
+
 def _prereg_sample(prereg_dir: Path, batch_id: str) -> tuple[str, str]:
     """從批次 prereg 取 sample.start／end（回測起訖唯一來源）；缺或格式錯即 ValueError。"""
     if not batch_id or not _BATCH_ID_RE.match(batch_id):
@@ -147,12 +166,13 @@ def _check_range(start: str, end: str) -> None:
         raise ValueError(f"回測結束日必須晚於起始日：{start}..{end}")
 
 
-def stage_card(card, *, work_dir: Path, gslang_src: Path, start: str, end: str) -> tuple[Path, str]:
+def stage_card(card, *, work_dir: Path, gslang_src: Path, start: str, end: str,
+               n_trials: int | None = None) -> tuple[Path, str]:
     """把 impl 卡寫成 staging bundle：<work_dir>/<id>/bundle（含 vendored gslang、config、manifest）。"""
     from quant_crawler.ideas.admit import stage_bundle
     ir = json.loads(from_repo(card.ir_path).read_text(encoding="utf-8"))
     spy = (work_dir / card.id / "strategy.py").read_text(encoding="utf-8")
-    return stage_bundle(card, ir, spy, work_dir / card.id / "bundle", gslang_src, start, end)
+    return stage_bundle(card, ir, spy, work_dir / card.id / "bundle", gslang_src, start, end, n_trials)
 
 
 def admit_card(card, *, strategies_dir: Path, prereg_dir: Path, bt_result: Path | None, work_dir: Path,
@@ -166,13 +186,13 @@ def admit_card(card, *, strategies_dir: Path, prereg_dir: Path, bt_result: Path 
     """
     from quant_crawler.ideas.admit import bundle_sha256, copy_staged_bundle, gate_admission, update_index
 
-    pre = _precheck(card, bt_result)
-    if not pre:
-        pre = check_result_file(bt_result)     # gate 只看非空；這裡再驗旁附雜湊
-    if pre:
-        return pre
     if not isinstance(card.id, str) or not _ID_RE.match(card.id):
         return [f"不合法的 card.id：{card.id!r}"]
+    pre = _precheck(card, bt_result)
+    if not pre:
+        pre = check_result_file(bt_result, card.id)     # gate 只看非空；這裡再驗檔名與旁附雜湊
+    if pre:
+        return pre
 
     target = strategies_dir / card.id
     if target.exists():       # 絕不覆蓋、也絕不刪除既有目錄
@@ -219,7 +239,8 @@ def admit_card(card, *, strategies_dir: Path, prereg_dir: Path, bt_result: Path 
             shutil.rmtree(bundle, ignore_errors=True)
             return why
         update_index(strategies_dir, {"id": card.id, "batch_id": card.batch_id, "verdict": card.verdict,
-                                      "admitted_at": admitted_at, "source": card.source})
+                                      "admitted_at": admitted_at, "source": card.source,
+                                      "result_sha256": hashlib.sha256(Path(bt_result).read_bytes()).hexdigest()})
     except BaseException as e:
         shutil.rmtree(bundle, ignore_errors=True)          # bundle 是本函式剛建立的
         if isinstance(e, (ValueError, OSError)):
@@ -351,10 +372,14 @@ def _cmd_fsm(a) -> int:
 
 
 def _cmd_batch(a) -> int:
-    from quant_crawler.ideas.batch import ledger_idea_card_ids, register_batch, select_batch
-    if a.batch_id is not None and not _BATCH_ID_RE.match(a.batch_id):
-        print(f"--batch-id 必須符合 {_BATCH_ID_RE.pattern}：{a.batch_id!r}", file=sys.stderr)
-        return 2
+    from quant_crawler.ideas.batch import _selection_count, ledger_idea_card_ids, register_batch, select_batch
+    if a.batch_id is not None:
+        from quant_crawler.ideas.batch import check_batch_id
+        try:
+            check_batch_id(a.batch_id)
+        except ValueError as e:
+            print(f"--batch-id 不合法：{e}", file=sys.stderr)
+            return 2
     cards = list(iter_cards(CARDS))
     in_ledger = ledger_idea_card_ids(LEDGER)
     for c in cards:
@@ -376,9 +401,10 @@ def _cmd_batch(a) -> int:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
         shas = {}
-        for c in sel:
+        n0 = _selection_count(LEDGER)       # 登記當下的 N；與 ledger 內該卡 decision_path.n_trials 同口徑
+        for i, c in enumerate(sel):
             _, shas[c.id] = stage_card(c, work_dir=CARDS / "_work", gslang_src=GSLANG_SRC,
-                                       start=a.start, end=a.end)
+                                       start=a.start, end=a.end, n_trials=n0 + i + 1)
         info = register_batch(sel, BATCH_DIR, now, LEDGER, PREREG_DIR, batch_id=a.batch_id, cards_dir=CARDS,
                               config_shas=shas, sample=(a.start, a.end))
     except (ValueError, FileExistsError, OSError) as e:
@@ -414,7 +440,9 @@ def _cmd_backtest(a) -> int:
         card = load_card(path)
         try:
             start, end = _prereg_sample(PREREG_DIR, card.batch_id)
-            bundle, sha = stage_card(card, work_dir=CARDS / "_work", gslang_src=GSLANG_SRC, start=start, end=end)
+            n = _ledger_n_trials(LEDGER, card.id)
+            bundle, sha = stage_card(card, work_dir=CARDS / "_work", gslang_src=GSLANG_SRC, start=start, end=end,
+                                     n_trials=n)
         except (ValueError, OSError) as e:
             print(f"staging 失敗：{type(e).__name__}: {e}", file=sys.stderr)
             return 1

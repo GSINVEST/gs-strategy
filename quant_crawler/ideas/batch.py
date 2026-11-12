@@ -67,6 +67,16 @@ def _exclusive(path: Path):
                     fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
+def check_batch_id(batch_id: str) -> None:
+    """批次 id 須合法，且不得與卡片 trial_id 命名空間（t-idea-<card_id>）撞名：
+    去掉 `idea-` 前綴後若符合 card id 規則（例如 `idea-bar`），其批次根紀錄 `t-idea-bar` 會與卡 `bar` 的 trial 相同。"""
+    if not isinstance(batch_id, str) or not _BATCH_ID_RE.match(batch_id):
+        raise ValueError(f"batch_id 必須符合 {_BATCH_ID_RE.pattern}：{batch_id!r}")
+    if batch_id.startswith("idea-") and _ID_RE.match(batch_id[len("idea-"):]):
+        raise ValueError(f"batch_id {batch_id!r} 會與卡片 {batch_id[len('idea-'):]!r} 的 trial_id "
+                         f"t-{batch_id} 撞名；請換名稱（預設的 idea-batch-<日期> 不受影響）")
+
+
 def select_batch(cards: list[IdeaCard], limit: int = MAX_BATCH, exclude_ids=()) -> list[IdeaCard]:
     if limit > MAX_BATCH:
         raise ValueError(f"每批上限 {MAX_BATCH}，收到 {limit}")
@@ -217,8 +227,7 @@ def register_batch(cards: list[IdeaCard], root: Path, now: str, ledger: Path, pr
                 f"status={c.status!r} verdict={c.verdict!r}")
 
     batch_id = f"idea-batch-{now[:10]}" if batch_id is None else batch_id
-    if not _BATCH_ID_RE.match(batch_id):
-        raise ValueError(f"batch_id 必須符合 {_BATCH_ID_RE.pattern}：{batch_id!r}")
+    check_batch_id(batch_id)
     config_shas = config_shas or {}
     bfile = root / f"{batch_id}.json"
     pfile = prereg_dir / f"{batch_id}.yaml"

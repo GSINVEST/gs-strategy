@@ -11,9 +11,10 @@ from pathlib import Path
 
 import yaml
 
-from quant_crawler.ideas.card import _ID_RE, IdeaCard, rel_to_repo
+from quant_crawler.ideas.card import _ID_RE, REPO, IdeaCard, rel_to_repo
 
 _SKIP_DIRS = {"__pycache__"}
+FUTURES_SETUP = REPO / "strategies" / "_common" / "futures_setup.py"
 
 
 def _umask() -> int:
@@ -34,6 +35,14 @@ def _normalize_perms(root: Path) -> None:
             os.chmod(f, (0o777 if is_x else 0o666) & ~um)
 
 
+def reject_symlinks(d: Path) -> None:
+    """bundle 內不得有 symlink（檔或目錄）：複製／雜湊會跟著連結走，等於讓 bundle 內容指向 bundle 外。"""
+    for dp, dns, fns in os.walk(d, followlinks=False):
+        for n in list(dns) + list(fns):
+            if os.path.islink(os.path.join(dp, n)):
+                raise ValueError("bundle 內不得有 symlink：" + Path(dp, n).relative_to(d).as_posix())
+
+
 def bundle_sha256(d: Path) -> str:
     """整個 bundle 的內容雜湊：對所有檔案（相對 posix 路徑穩定排序）的「路徑＋內容」。
     排除 __pycache__／*.pyc（跑回測時 import 策略會產生，不屬於內容）。"""
@@ -47,7 +56,8 @@ def bundle_sha256(d: Path) -> str:
             f = Path(dp) / fn
             files.append((f.relative_to(d).as_posix(), f))
     for rel, f in sorted(files):
-        h.update(rel.encode("utf-8") + b"\x00" + f.read_bytes() + b"\x00")
+        rb, cb = rel.encode("utf-8"), f.read_bytes()
+        h.update(len(rb).to_bytes(8, "big") + rb + len(cb).to_bytes(8, "big") + cb)    # 長度前綴，無分隔歧義
     return h.hexdigest()
 
 
@@ -64,7 +74,7 @@ def _check_id(cid) -> None:
 
 
 def write_bundle(card: IdeaCard, ir: dict, strategy_py: str, strategies_dir: Path, gslang_src: Path,
-                 start: str, end: str) -> Path:
+                 start: str, end: str, n_trials: int | None = None) -> Path:
     cid = card.id
     _check_id(cid)
     d = strategies_dir / cid
@@ -72,7 +82,8 @@ def write_bundle(card: IdeaCard, ir: dict, strategy_py: str, strategies_dir: Pat
         raise FileExistsError(f"{d} 已存在；入庫不覆蓋")
     tmp = Path(tempfile.mkdtemp(prefix=f".{cid}.tmp-", dir=strategies_dir))
     try:
-        _fill_bundle(tmp, card, ir, strategy_py, gslang_src, start, end)
+        _fill_bundle(tmp, card, ir, strategy_py, gslang_src, start, end, n_trials)
+        reject_symlinks(tmp)
         _normalize_perms(tmp)
         os.rename(tmp, d)
     except BaseException:
@@ -82,13 +93,14 @@ def write_bundle(card: IdeaCard, ir: dict, strategy_py: str, strategies_dir: Pat
 
 
 def stage_bundle(card: IdeaCard, ir: dict, strategy_py: str, dest: Path, gslang_src: Path,
-                 start: str, end: str) -> tuple[Path, str]:
+                 start: str, end: str, n_trials: int | None = None) -> tuple[Path, str]:
     """寫 staging bundle（回測用、入庫前的唯一內容來源）。可重做：既有 dest 會被取代。回傳 (路徑, sha256)。"""
     _check_id(card.id)
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = Path(tempfile.mkdtemp(prefix=".stage-", dir=dest.parent))
     try:
-        _fill_bundle(tmp, card, ir, strategy_py, gslang_src, start, end)
+        _fill_bundle(tmp, card, ir, strategy_py, gslang_src, start, end, n_trials)
+        reject_symlinks(tmp)
         _normalize_perms(tmp)
         if dest.exists():
             shutil.rmtree(dest)
@@ -107,6 +119,7 @@ def copy_staged_bundle(staged: Path, strategies_dir: Path, cid: str, expected_sh
         raise FileExistsError(f"{d} 已存在；入庫不覆蓋")
     tmp = Path(tempfile.mkdtemp(prefix=f".{cid}.tmp-", dir=strategies_dir))
     try:
+        reject_symlinks(staged)
         shutil.copytree(staged, tmp, dirs_exist_ok=True,
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         got = bundle_sha256(tmp)
@@ -121,13 +134,18 @@ def copy_staged_bundle(staged: Path, strategies_dir: Path, cid: str, expected_sh
 
 
 def _fill_bundle(d: Path, card: IdeaCard, ir: dict, strategy_py: str, gslang_src: Path,
-                 start: str, end: str) -> None:
+                 start: str, end: str, n_trials: int | None = None) -> None:
     (d / "strategy.py").write_text(strategy_py, encoding="utf-8", newline="\n")
     (d / "gslang").mkdir()
     for f in sorted(Path(gslang_src).glob("*.py")):      # vendored：bundle 不得依賴 _common
         shutil.copyfile(f, d / "gslang" / f.name)
     (d / "gslang" / "SOURCE.txt").write_text(
         f"vendored copy, do not edit\nsource: {rel_to_repo(gslang_src)}\n", encoding="utf-8", newline="\n")
+    # 產生的策略會 `from futures_setup import ...`；runner 靠 strategies/_common 在 sys.path 才找得到，
+    # validate_dashboard_bundle 只放 bundle 目錄，所以複製一份到 bundle 根目錄（算進 sha）。
+    shutil.copyfile(FUTURES_SETUP, d / "futures_setup.py")
+    with (d / "gslang" / "SOURCE.txt").open("a", encoding="utf-8", newline=chr(10)) as f:
+        f.write("futures_setup.py (bundle root) source: " + rel_to_repo(FUTURES_SETUP) + chr(10))
     sym = [i["id"] for i in ir.get("instruments", [])]
     cost = ir.get("costs", {}).get("commission", {}).get("per_instrument", {})
     spread = ir.get("costs", {}).get("slippage", {}).get("spread_points")
@@ -149,6 +167,8 @@ def _fill_bundle(d: Path, card: IdeaCard, ir: dict, strategy_py: str, gslang_src
                                      encoding="utf-8", newline="\n")
     config = {"start": manifest["start"], "end": manifest["end"], "capital_base": manifest["capital_base"],
               "bundle": "tquant_future", "params": params}
+    if n_trials is not None:
+        config["validation"] = {"n_trials": int(n_trials)}      # runner 的 resolve_n_trials 讀這個鍵
     (d / "config.yaml").write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False),
                                    encoding="utf-8", newline="\n")
     (d / "README.md").write_text(
