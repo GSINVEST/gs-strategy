@@ -5,6 +5,8 @@ import os
 from typing import Iterator
 from urllib.parse import urlencode
 
+import requests
+
 from quant_crawler.crawlers.base import BaseCrawler
 from quant_crawler.storage.models import PaperRecord
 
@@ -30,10 +32,18 @@ class GithubSearchCrawler(BaseCrawler):
         token = os.environ.get("GITHUB_TOKEN")
         if token:
             headers["Authorization"] = f"Bearer {token}"
-        for q in self.config.extras.get("queries", []):
+        queries = self.config.extras.get("queries", [])
+        # 整體配額平分給各 query，確保每個 query 都會被跑到
+        per_page = max(1, min(30, self.config.max_items_per_run // max(1, len(queries))))
+        for q in queries:
             url = f"{API}?" + urlencode({"q": q, "sort": "stars", "order": "desc",
-                                         "per_page": min(self.config.max_items_per_run, 30)})
-            resp = self.session.get(url, headers=headers)
+                                         "per_page": per_page})
+            try:
+                resp = self.session.get(url, headers=headers)
+            except requests.RequestException as e:
+                # 只記 query 與例外類型，不記 headers／token
+                self.log.error("github search %r request failed: %s", q, type(e).__name__)
+                continue
             if resp.status_code != 200:
                 self.log.error("github search %r returned %s", q, resp.status_code)
                 continue

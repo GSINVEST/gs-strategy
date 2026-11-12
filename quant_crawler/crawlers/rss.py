@@ -7,6 +7,7 @@ from time import struct_time
 from typing import Iterator
 
 import feedparser
+import requests
 
 from quant_crawler.crawlers.base import BaseCrawler
 from quant_crawler.storage.models import PaperRecord
@@ -24,7 +25,12 @@ class RssCrawler(BaseCrawler):
 
     def fetch(self) -> Iterator[PaperRecord]:
         for feed in self.config.extras.get("feeds", []):
-            resp = self.session.get(feed["url"])
+            try:
+                resp = self.session.get(feed["url"])
+            except requests.RequestException as e:
+                # 只記 feed 名稱與例外類型，不記 URL 或例外訊息
+                self.log.error("rss %s request failed: %s", feed["name"], type(e).__name__)
+                continue
             if resp.status_code != 200:
                 self.log.error("rss %s returned %s", feed["name"], resp.status_code)
                 continue
