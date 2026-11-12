@@ -28,6 +28,8 @@ RUN python -m venv /app/.venv-bt && /app/.venv-bt/bin/pip install -r requirement
 
 COPY . .
 COPY --from=ui /ui/dist /app/strategies/_common/graph/ui/dist
+# TejToolAPI 在 import 時會在 site-packages 內建立 temp 目錄；先建好並開放寫入（非 root 執行）
+RUN mkdir -p /app/.venv-bt/lib/python3.12/site-packages/TejToolAPI/temp && chmod 777 /app/.venv-bt/lib/python3.12/site-packages/TejToolAPI/temp
 RUN useradd -u 10001 -m app && mkdir -p /app/data /app/.graph-runs /app/.cache /app/log && chown 10001 /app/data /app/.graph-runs /app/.cache /app/log
 USER 10001
 

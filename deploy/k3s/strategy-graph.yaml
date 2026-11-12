@@ -1,4 +1,4 @@
-# 策略圖（Live Strategy Graph / StratyUI）on k3s。P1：掛 hostPath 資料快照（不連 TEJ／LLM，回測待 P2）。
+# 策略圖（Live Strategy Graph / StratyUI）on k3s。P2：hostPath 資料快照＋gs-zipline-tej＋TEJ 金鑰（Secret）。
 # 資料放 hostPath /srv/gs-data/strategy-graph（uid 10001 可寫）：data/ graph-runs/ log/ zipline/。
 #
 # ⚠ 認證邊界：伺服器信任 X-Auth-Request-Email（只在 Host 為 public-host 時）。該標頭是 wiki-caddy 的 oidc_guard 設定的，
@@ -45,7 +45,16 @@ spec:
             - {name: root, mountPath: /app/.graph-runs, subPath: graph-runs}
             - {name: root, mountPath: /app/log, subPath: log}
             - {name: root, mountPath: /home/app/.zipline, subPath: zipline}
-          # P2 再加：GS_ZIPLINE_TEJ_ROOT、TEJAPI_KEY（secretKeyRef）、QuantData 位址
+            - {name: root, mountPath: /home/app/gs-zipline-tej, subPath: gs-zipline-tej}
+          # P2：回測。gs-zipline-tej 為 b6c1504 的原始碼副本（不含 .git/.env/.venv），bundle 資料在 zipline/。
+          #   Secret strategy-graph-tej 由人以 kubectl 從 WSL 的 gs-strategy/.env 建立（金鑰不進 git、不進映像）。
+          #   尚未設定：LLM 金鑰（agent／論文產生策略節點）與 QuantData 位址，見遷移評估文件。
+          env:
+            - {name: GS_ZIPLINE_TEJ_ROOT, value: /home/app/gs-zipline-tej}
+            - name: TEJAPI_KEY
+              valueFrom: {secretKeyRef: {name: strategy-graph-tej, key: TEJAPI_KEY}}
+            - name: TEJAPI_BASE
+              valueFrom: {secretKeyRef: {name: strategy-graph-tej, key: TEJAPI_BASE}}
       volumes:
         - name: root
           hostPath: {path: /srv/gs-data/strategy-graph, type: DirectoryOrCreate}
