@@ -1,5 +1,8 @@
 # quant_crawler/ideas/tlc.py
-"""對單一 IR 跑 TLC（透過 genesis-deck fsm_atlas.py）。PASS 只代表「有限模型內未發現違反」。"""
+"""對單一 IR 跑 TLC（透過 genesis-deck fsm_atlas.py）。PASS 只代表「有限模型內未發現違反」。
+
+下游判斷通過必須用 `verdict == "pass_with_bounds"`，不得用 startswith／truthiness／`!= "counterexample"`。
+"""
 from __future__ import annotations
 
 import json
@@ -65,22 +68,44 @@ def write_demo_params(ir: dict, d: Path) -> Path:
     return p
 
 
+def _clear_dir(d: Path) -> None:
+    # fsm_atlas 會跑資料夾內所有 *.ir.json，殘留檔會污染本次結果
+    if d.is_dir():
+        for f in d.iterdir():
+            if f.is_file():
+                f.unlink()
+
+
 def run_tlc(ir_path: Path, work: Path, root: str | None = None, timeout: int = 600, heap: str = "1g") -> TlcResult:
     formal = _root(root) / "scripts" / "formal"
     ir = json.loads(ir_path.read_text(encoding="utf-8"))
     ir_dir, params_dir = work / "ir", work / "params"
     ir_dir.mkdir(parents=True, exist_ok=True)
+    _clear_dir(ir_dir)
+    _clear_dir(params_dir)
     shutil.copy(ir_path, ir_dir / f"{ir['id']}.ir.json")
     write_demo_params(ir, params_dir)
     out = work / "atlas.json"
+    out.unlink(missing_ok=True)  # 避免上一輪的舊 atlas 被當成本次結果
     cmd = [sys.executable, str(formal / "fsm_atlas.py"), "--ir-dir", str(ir_dir),
            "--params-dir", str(params_dir), "--allow-demo-params", "--run-tlc",
            "--timeout", str(timeout), "--heap", heap, "--deterministic", "--out", str(out)]
     env = {**os.environ}
-    p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout * 4, env=env)
-    if not out.is_file():
-        return TlcResult("unchecked", {"stderr": p.stderr[-2000:], "rc": p.returncode})
-    atlas = json.loads(out.read_text(encoding="utf-8"))
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout * 4, env=env)
+    except subprocess.TimeoutExpired:
+        return TlcResult("inconclusive", {"error": f"timeout：fsm_atlas 超過 {timeout * 4} 秒未結束，結果未知"})
+    except OSError as e:
+        return TlcResult("unchecked", {"error": f"無法啟動 fsm_atlas：{e}"})
+    # fsm_atlas.main 成功時一律 return 0；非零＝崩潰，atlas 不可信（合法的反例仍是 rc=0）
+    if p.returncode != 0:
+        return TlcResult("unchecked", {"error": "fsm_atlas 非零結束，atlas 不可信",
+                                       "rc": p.returncode, "stderr": p.stderr[-2000:]})
+    try:
+        atlas = json.loads(out.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        return TlcResult("unchecked", {"error": f"atlas 缺失或毀損：{e}", "rc": p.returncode})
+    if not isinstance(atlas, dict):
+        return TlcResult("unchecked", {"error": "atlas 不是 JSON 物件", "rc": p.returncode})
     return TlcResult(verdict_from_atlas(atlas, ir["id"]),
-                     {"tlc_note": atlas.get("tlc_note"), "rc": p.returncode,
-                      "stderr": p.stderr[-2000:]})
+                     {"tlc_note": atlas.get("tlc_note"), "rc": p.returncode})

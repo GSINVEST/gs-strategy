@@ -1,7 +1,11 @@
 # tests/test_idea_tlc.py
 import json
+import subprocess
 
-from quant_crawler.ideas.tlc import verdict_from_atlas, write_demo_params
+import pytest
+
+from quant_crawler.ideas import tlc
+from quant_crawler.ideas.tlc import run_tlc, verdict_from_atlas, write_demo_params
 
 
 def _atlas(status):
@@ -57,3 +61,109 @@ def test_demo_params_fill_todo_values(tmp_path):
     p = write_demo_params(ir, tmp_path)
     d = json.loads(p.read_text(encoding="utf-8"))
     assert set(d["params"]) == {"slip_pts", "gap_points"}
+
+
+# ───────── run_tlc 的失敗路徑（monkeypatch subprocess.run，不需 Java）─────────
+
+@pytest.fixture
+def fake_root(tmp_path):
+    root = tmp_path / "formal"
+    (root / "scripts" / "formal").mkdir(parents=True)
+    (root / "scripts" / "formal" / "gslang_compiler.py").write_text("", encoding="utf-8")
+    (root / "scripts" / "formal" / "fsm_atlas.py").write_text("", encoding="utf-8")
+    return root
+
+
+@pytest.fixture
+def ir_file(tmp_path):
+    p = tmp_path / "x.ir.json"
+    p.write_text(json.dumps({"id": "x"}), encoding="utf-8")
+    return p
+
+
+def _out_arg(cmd):
+    return cmd[cmd.index("--out") + 1]
+
+
+def _fake_run(monkeypatch, behavior):
+    """behavior(cmd) -> CompletedProcess 或丟例外。"""
+    def fake(cmd, **kw):
+        return behavior(cmd)
+    monkeypatch.setattr(tlc.subprocess, "run", fake)
+
+
+def test_timeout_is_inconclusive(monkeypatch, fake_root, ir_file, tmp_path):
+    def boom(cmd):
+        raise subprocess.TimeoutExpired(cmd, 1)
+    _fake_run(monkeypatch, boom)
+    r = run_tlc(ir_file, tmp_path / "w", root=str(fake_root))
+    assert r.verdict == "inconclusive"
+    assert "timeout" in r.detail.get("error", "").lower()
+
+
+def test_launch_oserror_is_unchecked(monkeypatch, fake_root, ir_file, tmp_path):
+    def boom(cmd):
+        raise FileNotFoundError("python missing")
+    _fake_run(monkeypatch, boom)
+    r = run_tlc(ir_file, tmp_path / "w", root=str(fake_root))
+    assert r.verdict == "unchecked"
+
+
+def test_stale_atlas_is_not_trusted(monkeypatch, fake_root, ir_file, tmp_path):
+    # 上一輪留下的 pass_with_bounds atlas；本輪子行程沒寫新檔就崩潰 → 不得回傳舊 verdict
+    work = tmp_path / "w"
+    work.mkdir()
+    (work / "atlas.json").write_text(json.dumps(_atlas("pass_with_bounds")), encoding="utf-8")
+
+    def no_output(cmd):
+        return subprocess.CompletedProcess(cmd, 1, "", "crash")
+    _fake_run(monkeypatch, no_output)
+    r = run_tlc(ir_file, work, root=str(fake_root))
+    assert r.verdict == "unchecked"
+
+
+def test_corrupt_atlas_is_unchecked(monkeypatch, fake_root, ir_file, tmp_path):
+    def garbage(cmd):
+        open(_out_arg(cmd), "w", encoding="utf-8").write("{not json")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+    _fake_run(monkeypatch, garbage)
+    r = run_tlc(ir_file, tmp_path / "w", root=str(fake_root))
+    assert r.verdict == "unchecked"
+
+
+def test_nonzero_exit_is_not_trusted_even_if_atlas_says_pass(monkeypatch, fake_root, ir_file, tmp_path):
+    # fsm_atlas.main 成功時一律 return 0；非零＝崩潰，atlas 不可信
+    def pass_then_fail(cmd):
+        open(_out_arg(cmd), "w", encoding="utf-8").write(json.dumps(_atlas("pass_with_bounds")))
+        return subprocess.CompletedProcess(cmd, 1, "", "err")
+    _fake_run(monkeypatch, pass_then_fail)
+    r = run_tlc(ir_file, tmp_path / "w", root=str(fake_root))
+    assert r.verdict == "unchecked"
+
+
+def test_counterexample_exit0_is_kept(monkeypatch, fake_root, ir_file, tmp_path):
+    # 合法的反例結果（rc=0）不得被丟掉
+    def cex(cmd):
+        open(_out_arg(cmd), "w", encoding="utf-8").write(json.dumps(_atlas("counterexample")))
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+    _fake_run(monkeypatch, cex)
+    r = run_tlc(ir_file, tmp_path / "w", root=str(fake_root))
+    assert r.verdict == "counterexample"
+
+
+def test_leftover_ir_and_params_are_cleared(monkeypatch, fake_root, ir_file, tmp_path):
+    work = tmp_path / "w"
+    (work / "ir").mkdir(parents=True)
+    (work / "params").mkdir(parents=True)
+    (work / "ir" / "other.ir.json").write_text("{}", encoding="utf-8")
+    (work / "params" / "other.demo.json").write_text("{}", encoding="utf-8")
+    seen = {}
+
+    def record(cmd):
+        seen["ir"] = sorted(p.name for p in (work / "ir").iterdir())
+        seen["params"] = sorted(p.name for p in (work / "params").iterdir())
+        return subprocess.CompletedProcess(cmd, 1, "", "")
+    _fake_run(monkeypatch, record)
+    run_tlc(ir_file, work, root=str(fake_root))
+    assert seen["ir"] == ["x.ir.json"]
+    assert seen["params"] == ["x.demo.json"]
