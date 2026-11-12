@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
         - name: web
-          image: gs/strategy-graph:184dff3
+          image: gs/strategy-graph:72d2562
           imagePullPolicy: Never
           # （--fixture 模式需要主直譯器有 zipline／tejapi，映像刻意不裝，故不用。）
           args: ["python", "-m", "strategies._common.graph", "ui",
