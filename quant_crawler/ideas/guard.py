@@ -30,9 +30,17 @@ def tokenize(src: str) -> list[str]:
     return out
 
 
+_NUM = re.compile(r"\d+(?:\.\d+)?")
+_ID = re.compile(r"[A-Za-z_]\w*")
+_CMP = ("==", "!=", "<", "<=", ">", ">=")
+
+
 class _P:
-    def __init__(self, toks, env):
-        self.t, self.i, self.env = toks, 0, env
+    """遞迴下降 parser，產生 AST：("num", s)｜("id", s)｜("not", x)｜("bin", op, l, r)。
+    evaluate 與 to_rust 共用，確保 Python 拒絕的輸入 Rust 端也拒絕。"""
+
+    def __init__(self, toks):
+        self.t, self.i = toks, 0
 
     def peek(self):
         return self.t[self.i] if self.i < len(self.t) else None
@@ -48,46 +56,42 @@ class _P:
         v = self.and_()
         while self.peek() == "or":
             self.eat()
-            r = self.and_()
-            v = bool(v) or bool(r)
+            v = ("bin", "or", v, self.and_())
         return v
 
     def and_(self):
         v = self.not_()
         while self.peek() == "and":
             self.eat()
-            r = self.not_()
-            v = bool(v) and bool(r)
+            v = ("bin", "and", v, self.not_())
         return v
 
     def not_(self):
         if self.peek() == "not":
             self.eat()
-            return not self.not_()
+            return ("not", self.not_())
         return self.cmp()
 
     def cmp(self):
         v = self.add()
         op = self.peek()
-        if op in ("==", "!=", "<", "<=", ">", ">="):
+        if op in _CMP:
             self.eat()
-            r = self.add()
-            return {"==": v == r, "!=": v != r, "<": v < r, "<=": v <= r, ">": v > r, ">=": v >= r}[op]
+            return ("bin", op, v, self.add())
         return v
 
     def add(self):
         v = self.mul()
         while self.peek() in ("+", "-"):
             op = self.eat()
-            r = self.mul()
-            v = v + r if op == "+" else v - r
+            v = ("bin", op, v, self.mul())
         return v
 
     def mul(self):
         v = self.atom()
         while self.peek() == "*":
             self.eat()
-            v = v * self.atom()
+            v = ("bin", "*", v, self.atom())
         return v
 
     def atom(self):
@@ -96,39 +100,71 @@ class _P:
             v = self.expr()
             self.eat(")")
             return v
-        if re.fullmatch(r"\d+(?:\.\d+)?", t):
-            return float(t) if "." in t else int(t)
-        if t in _KW or not re.fullmatch(r"[A-Za-z_]\w*", t):
+        if _NUM.fullmatch(t):
+            return ("num", t)
+        if t in _KW or not _ID.fullmatch(t):
             raise GuardError(f"不合法的原子：{t!r}")
-        if t not in self.env:
-            raise GuardError(f"未知識別字：{t!r}")
-        return self.env[t]
+        return ("id", t)
 
 
-def evaluate(tokens: list[str], env: dict):
-    p = _P(tokens, env)
+def parse(tokens: list[str]):
+    p = _P(tokens)
     v = p.expr()
     if p.peek() is not None:
         raise GuardError(f"多餘的 token：{p.peek()!r}")
     return v
 
 
+def _ev(n, env):
+    k = n[0]
+    if k == "num":
+        return float(n[1]) if "." in n[1] else int(n[1])
+    if k == "id":
+        if n[1] not in env:
+            raise GuardError(f"未知識別字：{n[1]!r}")
+        return env[n[1]]
+    if k == "not":
+        return not _ev(n[1], env)
+    op = n[1]
+    v, r = _ev(n[2], env), _ev(n[3], env)  # 不短路：未知識別字一律報錯
+    if op == "or":
+        return bool(v) or bool(r)
+    if op == "and":
+        return bool(v) and bool(r)
+    return {"==": lambda: v == r, "!=": lambda: v != r, "<": lambda: v < r, "<=": lambda: v <= r,
+            ">": lambda: v > r, ">=": lambda: v >= r, "+": lambda: v + r, "-": lambda: v - r,
+            "*": lambda: v * r}[op]()
+
+
+def evaluate(tokens: list[str], env: dict):
+    return _ev(parse(tokens), env)
+
+
+_PREC = {"or": 1, "and": 2, **{c: 3 for c in _CMP}, "+": 4, "-": 4, "*": 5}
+_RUST_OP = {"and": "&&", "or": "||"}
+
+
+def _rs(n, m) -> tuple[str, int]:
+    k = n[0]
+    if k == "num":
+        return (n[1] if "." in n[1] else f"{n[1]}.0"), 9
+    if k == "id":
+        if n[1] not in m:
+            raise GuardError(f"未知識別字：{n[1]!r}")
+        return m[n[1]], 9
+    if k == "not":
+        s, pr = _rs(n[1], m)
+        return (f"!{s}" if pr == 9 else f"!({s})"), 8
+    op = n[1]
+    p = _PREC[op]
+    ls, lp = _rs(n[2], m)
+    rs, rp = _rs(n[3], m)
+    if lp < p or (op in _CMP and lp == p):
+        ls = f"({ls})"
+    if rp <= p:
+        rs = f"({rs})"
+    return f"{ls} {_RUST_OP.get(op, op)} {rs}", p
+
+
 def to_rust(tokens: list[str], ident_map: dict[str, str]) -> str:
-    out = []
-    for t in tokens:
-        if t == "and":
-            out.append("&&")
-        elif t == "or":
-            out.append("||")
-        elif t == "not":
-            out.append("!")
-        elif re.fullmatch(r"\d+(?:\.\d+)?", t):
-            out.append(t if "." in t else f"{t}.0")
-        elif re.fullmatch(r"[A-Za-z_]\w*", t):
-            if t not in ident_map:
-                raise GuardError(f"未知識別字：{t!r}")
-            out.append(ident_map[t])
-        else:
-            out.append(t)
-    s = " ".join(out)
-    return s.replace("! ", "!").replace("( ", "(").replace(" )", ")")
+    return _rs(parse(tokens), ident_map)[0]

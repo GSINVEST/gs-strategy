@@ -40,7 +40,7 @@ def simulate(ir: dict, bars: list[tuple[float, float, float, float]]):
     consts = _consts(ir)
     pos, pending, closes, fills = 0.0, None, [], []
     base_env = {**consts, **ZONES}
-    state_preds = [(s["id"], tokenize(s["predicate"].replace("position", "position"))) for s in ir["states"]]
+    state_preds = [(s["id"], tokenize(s["predicate"])) for s in ir["states"]]
     for i, (o, _h, _l, c) in enumerate(bars):
         if pending is not None:
             pos = pending

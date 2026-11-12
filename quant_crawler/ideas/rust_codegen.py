@@ -74,11 +74,15 @@ def generate_rust(ir: dict) -> str:
             if spec["fn"] not in SUPPORTED:
                 raise RustUnsupported(f"指標 {spec['fn']} 不支援（v1：{sorted(SUPPORTED)}）")
             if spec["fn"] == "CLOSE@1":
-                body.append(f"        let v_{iname}: Option<f64> = closes.last().copied();")
+                body.append(f"        let v_{iname}: Option<f64> = raw_close;")
             else:
                 fn = "ind_sma" if spec["fn"] == "SMA@1" else "ind_ema"
                 w = spec["args"]["window"]
-                body.append(f"        let v_{iname}: Option<f64> = {fn}(&closes, K_{w} as usize);")
+                wv = consts.get(w) if isinstance(w, str) else w
+                if isinstance(wv, bool) or not isinstance(wv, int) or wv < 1:
+                    raise RustUnsupported(f"指標 {spec['fn']} 的 window 必須是 >= 1 的整數，收到 {wv!r}")
+                wexpr = f"K_{w} as usize" if isinstance(w, str) else f"{wv}usize"
+                body.append(f"        let v_{iname}: Option<f64> = {fn}(&closes, {wexpr});")
         body.append(f"        let sig_{s['id']}: u8 = zone(v_{comp['left']}, v_{comp['right']});")
         idents[s["id"]] = f"sig_{s['id']}"
 
@@ -104,16 +108,22 @@ fn main() {
     let mut closes: Vec<f64> = Vec::new();
     let mut pos: f64 = 0.0;
     let mut pending: Option<f64> = None;
-    for (i, line) in stdin.lock().lines().enumerate() {
+    let mut raw_close: Option<f64>;
+    let mut i: usize = 0;  // 明確 bar 索引：每個非空行一根
+    for line in stdin.lock().lines() {
         let line = line.unwrap();
         if line.trim().is_empty() { continue; }
+        let bar = i;
+        i += 1;
         let f: Vec<f64> = line.split_whitespace().map(|x| x.parse().unwrap()).collect();
         let (o, c) = (f[0], f[3]);
         if let Some(t) = pending.take() {
             pos = t;
-            println!("{},{},{}", i, o, pos);
+            println!("{},{},{}", bar, o, pos);
         }
-        closes.push(c);
+        // 與 Python indicators 同規則：SMA/EMA 丟 NaN；CLOSE 看原始當根，NaN -> None
+        raw_close = if c.is_nan() { None } else { Some(c) };
+        if !c.is_nan() { closes.push(c); }
 """ + "\n".join(body) + "\n    }\n}\n"
     out.append(main)
     return "\n".join(out)
