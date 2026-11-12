@@ -14,17 +14,17 @@ from quant_crawler.ideas.card import IdeaCard, set_status
 
 # (pattern, 原因)。pattern 對 hypothesis+mechanism+market+horizon 的小寫文字比對。
 UNSUPPORTED = [
-    (r"cross[- ]?section|rank(ing)?\b|截面|排名|相對強弱|long[/-]short portfolio|portfolio|投組|組合|多標的|pairs?\b|配對|價差",
+    (r"cross[- ]?section|\brank(ing)?\b|截面|排名|相對強弱|long[/-]short portfolio|portfolio|投組|多標的|\bpairs?\b|配對|價差",
      "多標的／截面／配對：Gslang v0.1 只支援單一標的"),
-    (r"stop[- ]?loss|take[- ]?profit|trailing|停損|停利|移動停損|atr stop",
+    (r"stop[- ]?loss|take[- ]?profit|trailing[- ]stop|停損|停利|移動停損|atr stop",
      "停損／停利／移動停損：Gslang v0.1 出場只能由轉換條件決定"),
     (r"pyramid|scale[- ]?in|scale[- ]?out|加碼|減碼|分批",
      "加碼／減碼／分批：Gslang v0.1 只能直接調整到目標部位"),
-    (r"intraday|tick\b|minute|盤中|分鐘|limit order|限價|order book|委託簿",
+    (r"intraday|\btick\b|minute|盤中|分鐘|limit order|限價|order book|委託簿",
      "盤中／限價：Gslang v0.1 只支援日頻、收盤決策、下一根開盤成交"),
-    (r"crossover|golden cross|death cross|交叉|slope|斜率|momentum change|前一根",
+    (r"crossover|golden cross|death cross|交叉|cross(es|ed|ing)?\s+(above|below|over|under)|slope|斜率|momentum change|前一根",
      "交叉／斜率／歷史引用：Gslang v0.1 沒有歷史引用語法"),
-    (r"optimi[sz]ation|grid search|walk[- ]?forward optim|參數優化|網格",
+    (r"grid search|walk[- ]?forward optim|參數優化|網格",
      "參數優化：Gslang v0.1 不做優化，參數由人給定"),
 ]
 RESURRECT = "Gslang 擴充該能力後重新分診（見 docs/gslang-strategy-formation-gap-eval）"

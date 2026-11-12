@@ -58,3 +58,50 @@ def test_apply_triage_updates_card():
     d = _c(id="x_2", hypothesis="")
     apply_triage(d, set())
     assert d.status == "drop"
+
+
+# --- fix round 1：誤判與漏判的正負對照 ---
+
+def test_trailing_return_is_not_trailing_stop():
+    r = triage(_c(hypothesis="trailing 12-month return 為正時做多 TX"), set())
+    assert r.status == "triaged"
+
+
+def test_trailing_stop_still_deferred():
+    r = triage(_c(hypothesis="trailing stop 2 ATR 出場"), set())
+    assert r.status == "defer"
+
+
+def test_repair_is_not_pairs():
+    r = triage(_c(hypothesis="均線 repair 型態後做多 TX"), set())
+    assert r.status == "triaged"
+
+
+def test_stick_is_not_tick():
+    r = triage(_c(hypothesis="價格黏著 stick 於均線上方時做多 TX"), set())
+    assert r.status == "triaged"
+
+
+def test_frank_is_not_rank():
+    r = triage(_c(hypothesis="frank 式均線規則做多 TX"), set())
+    assert r.status == "triaged"
+
+
+def test_multi_signal_combination_not_cross_sectional():
+    r = triage(_c(hypothesis="多種訊號組合後站上均線做多 TX"), set())
+    assert r.status == "triaged"
+
+
+def test_optimization_word_alone_not_deferred():
+    r = triage(_c(hypothesis="引用 optimization 文獻的均線規則做多 TX"), set())
+    assert r.status == "triaged"
+
+
+def test_grid_search_and_param_optimization_deferred():
+    assert triage(_c(hypothesis="用 grid search 找均線長度做多 TX"), set()).status == "defer"
+    assert triage(_c(hypothesis="以參數優化決定均線長度做多 TX"), set()).status == "defer"
+
+
+def test_crosses_above_deferred():
+    r = triage(_c(hypothesis="Long when close crosses above SMA"), set())
+    assert r.status == "defer"
