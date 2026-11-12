@@ -16,6 +16,7 @@ import "@fontsource/noto-sans-tc/400.css";
 import "./style.css";
 import { Replay } from "./Replay";
 import { Fsm, FsmBody } from "./FsmPanel";
+import { humanizeOutputs } from "./humanize";
 import {
   api,
   compatible,
@@ -302,9 +303,46 @@ function Result({ state = {} }) {
         title={state.equity ? "權益曲線" : "最近區間"}
       />
     );
-  if (Object.keys(o).length)
-    return <div className="mono scalar">{JSON.stringify(o)}</div>;
+  const cards = humanizeOutputs(o);
+  if (cards) return <MetaCards cards={cards} raw={o} />;
   return <div className="empty">— 尚無產出</div>;
+}
+// 以人看得懂的方式呈現節點 metadata；原始 JSON 收在「原始資料」摺疊裡，需要時才展開
+function MetaCards({ cards, raw }) {
+  return (
+    <div className="meta-cards nodrag nowheel" data-testid="meta-cards">
+      {cards.map((c, i) => (
+        <div className="meta-card" key={i}>
+          <b className="meta-title">{c.title}</b>
+          {c.summary && <p className="meta-summary">{c.summary}</p>}
+          {c.rows.length > 0 && (
+            <dl className="meta-rows">
+              {c.rows.map(([k, v]) => (
+                <React.Fragment key={k}>
+                  <dt>{k}</dt>
+                  <dd>{v}</dd>
+                </React.Fragment>
+              ))}
+            </dl>
+          )}
+          {(c.tags.length > 0 || c.reference) && (
+            <div className="meta-tags">
+              {c.reference && <span className="meta-tag ref">參考：{c.reference}</span>}
+              {c.tags.map((t) => (
+                <span className="meta-tag" key={t}>
+                  {t}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+      <details className="meta-raw">
+        <summary>原始資料</summary>
+        <pre className="mono">{JSON.stringify(raw, null, 2)}</pre>
+      </details>
+    </div>
+  );
 }
 function Param({ id, name, schema, value, change, disabled }) {
   const props = {
