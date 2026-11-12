@@ -1,6 +1,7 @@
 """IdeaCard：一張 idea 卡 = 一個 Markdown 檔（YAML front-matter + 備註本文）。"""
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
@@ -24,12 +25,41 @@ _ALLOWED = {
     "admitted": set(),
 }
 
-_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_]{0,95}$")
+_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_]{0,63}$")
+REPO = Path(__file__).resolve().parents[2]
 _FM_RE = re.compile(r"\A---\n(.*?)\n---\n?(.*)\Z", re.S)
 
 
 def slug(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
+    """轉成合法 card id（符合 _ID_RE）。過長時截 55 字再接 `_`＋sha256[:8]；結果為空（例如全非 ASCII）時
+    以雜湊當 id。雜湊取自原始文字，所以不同輸入不會撞成同一個 id。"""
+    h = hashlib.sha256(text.encode("utf-8")).hexdigest()[:8]
+    s = re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
+    if not s:
+        return f"x_{h}"
+    if len(s) > 55:
+        return f"{s[:55]}_{h}"
+    return s
+
+
+def rel_to_repo(p) -> str:
+    """repo 內的路徑存成相對 REPO 的 posix 字串；repo 外維持原樣（測試用 tmp 目錄）。"""
+    q = Path(p)
+    try:
+        return q.resolve().relative_to(REPO).as_posix()
+    except ValueError:
+        return str(p)
+
+
+def from_repo(s) -> Path:
+    q = Path(s)
+    return q if q.is_absolute() else REPO / q
+
+
+def safe_err(e: BaseException) -> str:
+    """錯誤摘要只含例外型別與（若有）HTTP 狀態碼；不含 str(e)，避免 URL／金鑰外洩。"""
+    code = getattr(getattr(e, "response", None), "status_code", None)
+    return f"{type(e).__name__}" + (f" status={code}" if code is not None else "")
 
 
 @dataclass

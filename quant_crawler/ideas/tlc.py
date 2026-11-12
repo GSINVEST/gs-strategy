@@ -15,6 +15,8 @@ from pathlib import Path
 
 from quant_crawler.ideas.gslang_bridge import _root
 
+_ENV_KEEP = ("PATH", "HOME", "JAVA_HOME", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "TEMP", "TMP",
+             "SYSTEMROOT", "GDECK_FORMAL")
 PARAMS_SCHEMA = "strategy-fsm-model-params/1"
 # fsm_atlas.py 實際會輸出的 target status；未知值一律視為 inconclusive（不得當通過）
 _KNOWN = {"pass_with_bounds", "counterexample", "mutation_not_caught", "inconclusive",
@@ -25,7 +27,6 @@ _KNOWN = {"pass_with_bounds", "counterexample", "mutation_not_caught", "inconclu
 class TlcResult:
     verdict: str
     detail: dict
-    demo_params: bool = True
 
 
 def verdict_from_atlas(atlas, ir_id: str) -> str:
@@ -98,7 +99,8 @@ def run_tlc(ir_path: Path, work: Path, root: str | None = None, timeout: int = 6
     cmd = [sys.executable, str(formal / "fsm_atlas.py"), "--ir-dir", str(ir_dir),
            "--params-dir", str(params_dir), "--allow-demo-params", "--run-tlc",
            "--timeout", str(timeout), "--heap", heap, "--deterministic", "--out", str(out)]
-    env = {**os.environ}
+    # 只傳必要變數：不把 GDECK_LLM_KEY／GITHUB_TOKEN／TEJAPI_KEY 等機密帶進子行程
+    env = {k: os.environ[k] for k in _ENV_KEEP if k in os.environ}
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout * 4, env=env)
     except subprocess.TimeoutExpired:

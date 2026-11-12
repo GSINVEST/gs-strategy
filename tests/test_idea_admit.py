@@ -25,7 +25,7 @@ def _card(status_path=("triaged", "fsm", "impl", "bt_registered", "bt_done")):
 
 
 def test_bundle_files_and_vendored_gslang(tmp_path):
-    d = write_bundle(_card(), IR, "def initialize(context):\n    pass\n", tmp_path, GSL_SRC)
+    d = write_bundle(_card(), IR, "def initialize(context):\n    pass\n", tmp_path, GSL_SRC, "2020-01-01", "2026-04-30")
     assert {p.name for p in d.iterdir()} >= {"strategy.py", "manifest.yaml", "config.yaml", "README.md", "gslang"}
     m = yaml.safe_load((d / "manifest.yaml").read_text(encoding="utf-8"))
     assert m["id"] == "demo_x" and m["asset_class"] == "future" and m["bundle"] == "tquant_future"
@@ -81,9 +81,9 @@ def test_bundle_cleanup_and_retry(tmp_path):
     root = tmp_path / "s"
     root.mkdir()
     with pytest.raises(Exception):
-        write_bundle(_card(), IR, "x", root, bad)
+        write_bundle(_card(), IR, "x", root, bad, "2020-01-01", "2026-04-30")
     assert list(root.iterdir()) == []
-    write_bundle(_card(), IR, "x", root, GSL_SRC)
+    write_bundle(_card(), IR, "x", root, GSL_SRC, "2020-01-01", "2026-04-30")
     assert (root / "demo_x" / "strategy.py").exists()
 
 
@@ -92,7 +92,7 @@ def test_bundle_existing_dir_untouched(tmp_path):
     d.mkdir()
     (d / "keep.txt").write_text("k")
     with pytest.raises(FileExistsError):
-        write_bundle(_card(), IR, "x", tmp_path, GSL_SRC)
+        write_bundle(_card(), IR, "x", tmp_path, GSL_SRC, "2020-01-01", "2026-04-30")
     assert [p.name for p in d.iterdir()] == ["keep.txt"]
     assert [p.name for p in tmp_path.iterdir()] == ["demo_x"]
 
@@ -102,7 +102,7 @@ def test_bad_card_id_rejected_before_write(tmp_path, bad):
     c = _card()
     c.id = bad  # 繞過 dataclass 驗證
     with pytest.raises(ValueError):
-        write_bundle(c, IR, "x", tmp_path, GSL_SRC)
+        write_bundle(c, IR, "x", tmp_path, GSL_SRC, "2020-01-01", "2026-04-30")
     assert list(tmp_path.iterdir()) == []
 
 
@@ -114,7 +114,7 @@ def test_bundle_contents_and_vendor_all(tmp_path):
     (src / "notes.txt").write_text("no")
     root = tmp_path / "s"
     root.mkdir()
-    d = write_bundle(_card(), IR, "PY_BODY\n", root, src)
+    d = write_bundle(_card(), IR, "PY_BODY\n", root, src, "2020-01-01", "2026-04-30")
     assert (d / "strategy.py").read_text(encoding="utf-8") == "PY_BODY\n"
     assert (d / "gslang" / "__init__.py").read_text() == "# __init__.py\n"
     assert (d / "gslang" / "extra.py").exists() and not (d / "gslang" / "notes.txt").exists()

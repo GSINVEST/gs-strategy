@@ -88,9 +88,12 @@ def _strlist(v) -> list[str]:
     return [x for x in v if isinstance(x, str)]
 
 
+def card_id_for(rec: PaperRecord) -> str:
+    return slug(f"{rec.source}_{rec.source_id}")
+
+
 def _base_card(rec: PaperRecord) -> IdeaCard:
-    return IdeaCard(id=slug(f"{rec.source}_{rec.source_id}"),
-                    source=f"{rec.source}:{rec.source_id}", title=rec.title)
+    return IdeaCard(id=card_id_for(rec), source=f"{rec.source}:{rec.source_id}", title=rec.title)
 
 
 def extract_card(rec: PaperRecord, llm: LLM) -> IdeaCard:

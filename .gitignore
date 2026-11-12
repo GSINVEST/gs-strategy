@@ -48,3 +48,9 @@ data/qd_cache/
 
 # dry run ledger (local data, never commit)
 log/dryrun/
+
+# idea 漏斗暫存（Gslang／IR／strategy.py／staging bundle）與入庫暫存目錄
+ideas/_work/
+strategies/.*.tmp-*
+results/*.pkl
+results/*.pkl.sha256

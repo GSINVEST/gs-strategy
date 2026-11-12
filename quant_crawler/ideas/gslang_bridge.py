@@ -14,7 +14,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from quant_crawler.ideas.card import IdeaCard, set_status
+from quant_crawler.ideas.card import IdeaCard, rel_to_repo, set_status
 
 DEFAULT_ROOT = "/home/kevin/gdeck-formal"
 
@@ -103,7 +103,7 @@ def advance_card_to_fsm(card: IdeaCard, gsl: str, out_dir: Path, root: str | Non
         gp, ip = out_dir / f"{card.id}.gsl", out_dir / f"{card.id}.ir.json"
         gp.write_text(gsl, encoding="utf-8", newline="\n")
         ip.write_text(json.dumps(r.ir, ensure_ascii=False, indent=1), encoding="utf-8", newline="\n")
-        card.gsl_path, card.ir_path = str(gp), str(ip)
+        card.gsl_path, card.ir_path = rel_to_repo(gp), rel_to_repo(ip)
         set_status(card, "fsm", f"編譯通過，TODO(人)={r.todo_count}")
     elif r.unsupported:
         set_status(card, "defer", r.message)
