@@ -126,6 +126,23 @@ SOURCES: dict[str, SourceConfig] = {
         min_delay=3.0,
         max_items_per_run=20,
     ),
+    "rss": SourceConfig(
+        name="rss",
+        enabled=False,   # 先關；feeds 由人確認 URL 後再開，不憑記憶亂填
+        min_delay=3.0,
+        max_items_per_run=40,
+        extras={"feeds": []},
+    ),
+    "github": SourceConfig(
+        name="github",
+        enabled=False,   # 開之前先確認 GITHUB_TOKEN；未帶 token 時 API 額度很低
+        min_delay=3.0,
+        max_items_per_run=30,
+        extras={"queries": [
+            "topic:quantitative-finance", "topic:algorithmic-trading futures",
+            "topic:alpha-factor",
+        ]},
+    ),
 }
 
 
