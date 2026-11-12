@@ -9,8 +9,10 @@ from quant_crawler.crawlers.aqr import AQRCrawler
 from quant_crawler.crawlers.arxiv import ArxivCrawler
 from quant_crawler.crawlers.base import BaseCrawler
 from quant_crawler.crawlers.fed import FedFedsCrawler
+from quant_crawler.crawlers.github_search import GithubSearchCrawler
 from quant_crawler.crawlers.nber import NBERCrawler
 from quant_crawler.crawlers.repec import RepecCrawler
+from quant_crawler.crawlers.rss import RssCrawler
 from quant_crawler.crawlers.ssrn import SSRNCrawler
 from quant_crawler.crawlers.wiley import WileyCrawler
 from quant_crawler.storage.db import Storage
@@ -27,6 +29,8 @@ REGISTRY: dict[str, Callable[[SourceConfig, Storage], BaseCrawler]] = {
     "aqr": AQRCrawler,
     "wiley": WileyCrawler,
     "ssrn": SSRNCrawler,  # disabled by default
+    "rss": RssCrawler,  # disabled by default
+    "github": GithubSearchCrawler,  # disabled by default
 }
 
 
