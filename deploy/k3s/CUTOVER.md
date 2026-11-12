@@ -9,9 +9,9 @@
 - WSL 的 `gs-strategy-graph-ui`（9112）仍是正式環境。
 
 ## T-1　切換前（週五完成）
-1. merge PR #90（內含 --bind、proxy token、manifest、本手冊）；以 merge 後的 commit 重建映像並固定 tag。
+1. ✅ PR #90 已 merge（84ca80f）；映像已用 main 重建為 `gs/strategy-graph:84ca80f` 並部署到 pod。
 2. 公告員工：週六 10:00–10:30 策略圖暫停，之後需重新登入一次。
-3. 在 gb10、gs-linux 準備好設定檔但**先不啟用**（見 T2）；gs-linux 的 ufw 放行 gb10（192.168.11.90）到 18453——**需由使用者輸入 sudo**。
+3. 在 gb10、gs-linux 準備好設定檔但**先不啟用**（見 T2）。gs-linux 的 ufw 放行 gb10→18453 **已完成**。
 4. 確認 WSL ledger 筆數：`wc -l ~/gs-strategy-deploy/log/trials.jsonl`（11/12 為 726）。
 
 ## T0　停舊（10:00）
@@ -28,7 +28,7 @@
 4. `kubectl -n gs-dash rollout restart deploy/strategy-graph`，等 Ready。
 
 ## T2　接上新路徑（10:10）
-1. gs-linux：`k3s-dash-forward.service` 加一條 `-L 18453:127.0.0.1:30112`（比照 18450–18452），重啟該 user service。
+1. gs-linux：`~/.config/systemd/user/k3s-dash-forward.service` 的 `ExecStart` 那行加上 `-L 192.168.11.141:18453:192.168.0.73:30112`（綁 gs-linux 區網 IP、目的地為 jsonhuang 192.168.0.73，比照 18450–18452），然後 `systemctl --user daemon-reload && systemctl --user restart k3s-dash-forward`。ufw 已放行 gb10→18453（2026-11-12 完成）。
 2. jsonhuang：Service 由 ClusterIP 改回 NodePort 30112（改 `strategy-graph.yaml` 的 type／nodePort 後 apply）。
    proxy token 擋住直連者，所以 NodePort 對區網開放是可接受的。
 3. gb10：`/etc/caddy/conf.d/strategy-graph.caddy`
@@ -42,7 +42,10 @@
    `header_up X-Gs-Proxy-Token <token>`
    token 取得（不要寫進 git、不要貼到聊天）：
    `ssh jsonhuang "sudo k3s kubectl -n gs-dash get secret strategy-graph-proxy -o jsonpath='{.data.GS_PROXY_TOKEN}' | base64 -d"`
-   reload：`MSYS_NO_PATHCONV=1 docker exec <wiki-caddy> caddy reload --config /etc/caddy/Caddyfile`
+   先檢查再套用（PowerShell 下**不要**加 `MSYS_NO_PATHCONV=1`，那是 Git Bash 專用）：
+   `docker exec wiki-caddy caddy validate --config /etc/caddy/Caddyfile`，看到 `Valid configuration` 才 `docker exec wiki-caddy caddy reload --config /etc/caddy/Caddyfile`。
+   **不要 commit 這個檔**（含 token）；wiki-poc 追蹤它，改完用 `git update-index --assume-unchanged deploy/Caddyfile.oidc`，切換完成後再討論更安全的注入方式。
+   **改檔前**必須確認 gb10:8112 已通到 pod，否則 reload 會 502。回退備份：`Caddyfile.oidc.bak-strategy-k3s`（無 token）。
 
 ## T3　驗收（10:15）
 - 員工帳號經 OIDC 登入 `strategy.gsinvest.com`，Deck 桌面版面板重新整理後可見。
