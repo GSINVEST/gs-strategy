@@ -1000,3 +1000,16 @@ pre {
 .nav-link:hover {
   border-color: var(--accent);
 }
+
+/* 節點 metadata 的人類可讀呈現 */
+.meta-cards { display: flex; flex-direction: column; gap: 6px; font-size: 10px; max-height: 320px; overflow: auto; }
+.meta-card { display: flex; flex-direction: column; gap: 4px; }
+.meta-title { font-size: 11px; }
+.meta-summary { margin: 0; color: var(--muted); white-space: normal; line-height: 1.45; }
+.meta-rows { display: grid; grid-template-columns: max-content 1fr; gap: 2px 8px; margin: 0; }
+.meta-rows dt { color: var(--muted); }
+.meta-rows dd { margin: 0; overflow-wrap: anywhere; }
+.meta-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.meta-tag { border: 1px solid var(--line, #444); border-radius: 8px; padding: 0 6px; color: var(--muted); }
+.meta-raw summary { cursor: pointer; color: var(--muted); }
+.meta-raw pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 9px; margin: 4px 0 0; }
