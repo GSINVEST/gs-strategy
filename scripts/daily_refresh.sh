@@ -112,6 +112,19 @@ if ! "${VENV_BT}" "${ROOT_DIR}/scripts/validate_dashboard_bundle.py" \
     exit 3
 fi
 
+# --- Step 5: LLM codegen from papers (best effort, never fails the run) -----
+# Writes gated bundles to strategies/_llm_generated/ and a codegen experiment to
+# data/backtests.sqlite. Skipped when no LLM key is configured.
+CODEGEN_LIMIT="${CODEGEN_LIMIT:-3}"
+CODEGEN_MODEL="${CODEGEN_MODEL:-qwen3-235b-2507}"
+if [[ "${CODEGEN_LIMIT}" -gt 0 ]]; then
+    log "[step 5] llm_codegen --limit ${CODEGEN_LIMIT} --model ${CODEGEN_MODEL}"
+    if ! "${VENV_CRAWL}" -m quant_crawler.strategy_gen.llm_codegen \
+            --limit "${CODEGEN_LIMIT}" --model "${CODEGEN_MODEL}" >> "${RUN_LOG}" 2>&1; then
+        log "WARN: llm_codegen failed (see ${RUN_LOG}); continuing"
+    fi
+fi
+
 log "=== daily_refresh DONE ==="
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) OK emitted=${BUNDLES_EMITTED} validated=${#GEN_DIRS[@]}" >> "${SUMMARY_LOG}"
 exit 0

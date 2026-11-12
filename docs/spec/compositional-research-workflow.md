@@ -53,7 +53,7 @@
 research    = data >> view >> docs >> agent
 evaluation  = research >> backtest
 statistics  = ledger >> (report @ facts) >> resolve
-pipeline    = evaluation >> probe >> statistics
+pipeline    = evaluation >> probe >> statistics >> montecarlo
 ```
 
 只用名稱配對、不做「唯一相容型別」的猜測配對，正是結合律成立的原因。

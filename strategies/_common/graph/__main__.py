@@ -1,5 +1,6 @@
 """python -m strategies._common.graph {run,serve,types}."""
 import argparse
+import os
 import json
 from pathlib import Path
 
@@ -29,9 +30,9 @@ def serve_ui(args):
                     # The UI retries the validated path through the existing load
                     # endpoint so its controlled edge error remains reviewable.
                     pass
-            server = GraphHTTPServer(('127.0.0.1', args.port), service,
+            server = GraphHTTPServer((args.bind, args.port), service, public_hosts=args.public_host, proxy_token=os.environ.get('GS_PROXY_TOKEN'),
                                      ui_dist=Path(__file__).parent / 'ui' / 'dist')
-        print(f'Live Strategy Graph UI: http://127.0.0.1:{server.server_port}', flush=True)
+        print(f'Live Strategy Graph UI: http://{args.bind}:{server.server_port}', flush=True)
         server.serve_forever()
         return 0
     except KeyboardInterrupt:
@@ -63,9 +64,21 @@ def main(argv=None):
     parser.add_argument('--ledger', type=Path)
     parser.add_argument('--preview', action='store_true')
     parser.add_argument('--port', type=int, default=9102)
+    parser.add_argument('--bind', default='127.0.0.1', metavar='IP',
+                        help='listen address (default 127.0.0.1; use 0.0.0.0 only inside a container behind a trusted proxy)')
     parser.add_argument('--fixture', action='store_true')
     parser.add_argument('--fsm-atlas', type=Path, help='形式化驗證結果檔（strategy-fsm-atlas/1），唯讀')
+    parser.add_argument('--public-host', action='append', default=[], metavar='NAME',
+                        help='name a trusted reverse proxy serves this UI under (still binds 127.0.0.1)')
     args = parser.parse_args(argv)
+    import ipaddress, re
+    try:
+        ipaddress.ip_address(args.bind)
+    except ValueError:
+        parser.error('--bind 必須是 IP 位址')
+    if any(not re.fullmatch(r'[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+', h.lower())
+           for h in args.public_host):
+        parser.error('--public-host 必須是主機名稱（不含 port 與 scheme）')
     if args.fixture and (args.command != 'ui' or args.root or args.cache_dir or args.ledger):
         parser.error('測試資料模式僅適用於 ui，且不可覆寫儲存位置')
     if args.command == 'ui':
@@ -75,7 +88,7 @@ def main(argv=None):
         print(json.dumps(service.registry.describe(),ensure_ascii=False))
         return 0
     if args.command == 'serve':
-        server = GraphHTTPServer(('127.0.0.1',args.port),service)
+        server = GraphHTTPServer((args.bind,args.port),service,public_hosts=args.public_host,proxy_token=os.environ.get('GS_PROXY_TOKEN'))
         print(f'Live Strategy Graph API: http://127.0.0.1:{server.server_port}',flush=True)
         try:
             server.serve_forever()

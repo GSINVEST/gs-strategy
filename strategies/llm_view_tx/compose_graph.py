@@ -34,8 +34,9 @@ def pipeline(registry, model=DEFAULT_MODEL):
     statistics = (b('ledger.selection_n', 'ledger')
                   >> (b('validation.report', 'report') @ b('stat.facts', 'facts'))
                   >> b('stat.resolve', 'resolve'))
+    robustness = b('validation.monte_carlo', 'montecarlo')
     # The statistics block needs Returns from evaluation: compose, don't hand-wire.
-    return evaluation >> diagnostics >> statistics
+    return evaluation >> diagnostics >> statistics >> robustness
 
 
 def render(registry, model=DEFAULT_MODEL):

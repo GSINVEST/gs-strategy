@@ -1,0 +1,80 @@
+# 策略圖（Live Strategy Graph / StratyUI）on k3s。P2：hostPath 資料快照＋gs-zipline-tej＋TEJ 金鑰（Secret）。
+# 資料放 hostPath /srv/gs-data/strategy-graph（uid 10001 可寫）：data/ graph-runs/ log/ zipline/。
+#
+# ⚠ 認證邊界：伺服器信任 X-Auth-Request-Email（只在 Host 為 public-host 時）。該標頭是 wiki-caddy 的 oidc_guard 設定的，
+#   若有人能直接連到 NodePort 並自帶 Host／標頭，就能偽造身分。因此 P1 起 Service 為 ClusterIP，
+#   不開 NodePort；對外方式見下方 Service 的註解。
+# ⚠ ledger（選擇次數 N）只能有一個寫入者：replicas 固定 1、Recreate；切換前 WSL 端的排程工作必須先停。
+apiVersion: v1
+kind: Namespace
+metadata: {name: gs-dash}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: strategy-graph, namespace: gs-dash}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: strategy-graph}}
+  template:
+    metadata: {labels: {app: strategy-graph}}
+    spec:
+      containers:
+        - name: web
+          image: gs/strategy-graph:24c5f80
+          imagePullPolicy: Never
+          # （--fixture 模式需要主直譯器有 zipline／tejapi，映像刻意不裝，故不用。）
+          args: ["python", "-m", "strategies._common.graph", "ui",
+                 "--graph", "strategies/llm_view_tx/graph.json", "--port", "9112",
+                 "--bind", "0.0.0.0", "--public-host", "strategy.gsinvest.com"]
+          ports: [{containerPort: 9112}]
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 9112
+              # 伺服器會拒絕 Host 不是 127.0.0.1／public-host 的請求（含 kubelet 預設的 Pod IP）
+              httpHeaders: [{name: Host, value: "127.0.0.1:9112"}]
+            periodSeconds: 30
+          resources:
+            requests: {cpu: 100m, memory: 512Mi}
+            limits: {memory: 4Gi}
+          # P1：掛資料（ledger 在 log/trials.jsonl）。P1 的資料是 2026-11-12 的快照，WSL 仍是正式來源；
+          #     這個實例的「執行」會寫入自己的 ledger，切換（P3）前不可對員工開放，P3 會重新同步後才切。
+          volumeMounts:
+            - {name: root, mountPath: /app/data, subPath: data}
+            - {name: root, mountPath: /app/.graph-runs, subPath: graph-runs}
+            - {name: root, mountPath: /app/log, subPath: log}
+            - {name: root, mountPath: /home/app/.zipline, subPath: zipline}
+            - {name: root, mountPath: /home/app/gs-zipline-tej, subPath: gs-zipline-tej}
+          # P2：回測。gs-zipline-tej 為 b6c1504 的原始碼副本（不含 .git/.env/.venv），bundle 資料在 zipline/。
+          #   Secret strategy-graph-tej 由人以 kubectl 從 WSL 的 gs-strategy/.env 建立（金鑰不進 git、不進映像）。
+          #   Secret strategy-graph-llm（GS_LLM_API_KEY）同樣由人建立；目前沿用 genesis-deck-kevin.key（個人金鑰），
+          #   建議改成專用的服務金鑰，否則用量會記在個人名下。
+          #   QuantData 走 gsinvest 唯讀副本（jsonhuang 連不到 gb10 的 quantdata.lan）。
+          env:
+            - {name: GS_ZIPLINE_TEJ_ROOT, value: /home/app/gs-zipline-tej}
+            - {name: QD_API_BASE, value: "http://192.168.0.139:15060/api/v1"}
+            - {name: NUMEXPR_MAX_THREADS, value: "64"}
+            # 走 public host 的請求必須帶 X-Gs-Proxy-Token（wiki-caddy 在 OIDC 通過後加上）；Secret 由人建立
+            - name: GS_PROXY_TOKEN
+              valueFrom: {secretKeyRef: {name: strategy-graph-proxy, key: GS_PROXY_TOKEN}}
+            - name: GS_LLM_API_KEY
+              valueFrom: {secretKeyRef: {name: strategy-graph-llm, key: GS_LLM_API_KEY}}
+            - name: TEJAPI_KEY
+              valueFrom: {secretKeyRef: {name: strategy-graph-tej, key: TEJAPI_KEY}}
+            - name: TEJAPI_BASE
+              valueFrom: {secretKeyRef: {name: strategy-graph-tej, key: TEJAPI_BASE}}
+      volumes:
+        - name: root
+          hostPath: {path: /srv/gs-data/strategy-graph, type: DirectoryOrCreate}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: strategy-graph, namespace: gs-dash}
+# P1：只給叢集內（ClusterIP），驗證用 kubectl port-forward。刻意不開 NodePort：k3s 的 NodePort 流量在 ufw INPUT 之前
+# 就被 DNAT，ufw 規則擋不住，而伺服器信任 X-Auth-Request-Email，直連者可偽造身分。對外方式（P3）要另外決定
+# （例如只讓 gb10 Caddy 所在網段、或把 oidc 驗證移進 pod 前的 sidecar）後才開放。
+spec:
+  type: ClusterIP
+  selector: {app: strategy-graph}
+  ports: [{port: 9112, targetPort: 9112}]

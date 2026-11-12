@@ -155,7 +155,7 @@ def test_cli_types_starts_without_bundle_or_key():
     import sys
     result = subprocess.run([sys.executable,'-m','strategies._common.graph','types'],capture_output=True,text=True,check=True)
     ids={t['id'] for t in json.loads(result.stdout)}
-    assert {'data.futures_bars','data.continuous','feature.signed_momentum','feature.ewma_vol','signal.direction','sizing.vol_target','sizing.gross_cap','cost.futures','backtest.zipline','ledger.selection_n','validation.report','stat.facts','stat.resolve'} <= ids and len(ids)==19
+    assert {'data.futures_bars','data.continuous','feature.signed_momentum','feature.ewma_vol','signal.direction','sizing.vol_target','sizing.gross_cap','cost.futures','backtest.zipline','ledger.selection_n','validation.report','stat.facts','stat.resolve'} <= ids and {'data.pool_strategy','feature.strategy_spec','backtest.pool_zipline','backtest.pool_factor','validation.monte_carlo'} <= ids and len(ids)==24
 
 def test_invalid_save_path_does_not_replace_current_graph(tmp_path):
     s=make_service(tmp_path)
@@ -191,7 +191,7 @@ def test_cli_server_defaults_loopback_and_serves_json(tmp_path):
         with urlopen(address+'/api/node-types',timeout=10) as response:
             assert response.status==200
             ids={t['id'] for t in json.load(response)['node_types']}
-            assert {'data.futures_bars','data.continuous','feature.signed_momentum','feature.ewma_vol','signal.direction','sizing.vol_target','sizing.gross_cap','cost.futures','backtest.zipline','ledger.selection_n','validation.report','stat.facts','stat.resolve'} <= ids and len(ids)==19
+            assert {'data.futures_bars','data.continuous','feature.signed_momentum','feature.ewma_vol','signal.direction','sizing.vol_target','sizing.gross_cap','cost.futures','backtest.zipline','ledger.selection_n','validation.report','stat.facts','stat.resolve'} <= ids and {'data.pool_strategy','feature.strategy_spec','backtest.pool_zipline','backtest.pool_factor','validation.monte_carlo'} <= ids and len(ids)==24
         assert not (tmp_path/'log/trials.jsonl').exists()
     finally:
         process.terminate()

@@ -893,7 +893,9 @@ pre {
   position: fixed;
   inset: 44px 16px 28px 16px;
   z-index: 40;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 12px 16px 20px;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -908,6 +910,7 @@ pre {
 .replay-overlay h2 { margin: 2px 0 8px; font-size: 15px; }
 .replay-overlay h3 { margin: 12px 0 6px; font-size: 12px; color: var(--muted); font-weight: 600; }
 .replay-overlay small { color: var(--muted); letter-spacing: .08em; }
+.replay-overlay > header, .replay-meta, .replay-legend, .replay-controls { flex: none; }
 .replay-meta, .replay-legend, .replay-controls { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; }
 .replay-meta { padding: 6px 0 8px; border-bottom: 1px solid var(--border); }
 .replay-meta b { color: var(--text); }
@@ -919,7 +922,22 @@ pre {
 .replay-legend .benchmark::before { background: var(--muted); }
 .replay-legend .dirty::before { height: 10px; background: repeating-linear-gradient(45deg, var(--amber) 0 2px, transparent 2px 5px); }
 .replay-legend .fold::before { width: 1px; height: 12px; border-left: 1px dashed var(--muted); }
-.replay-chart { width: 100%; height: auto; display: block; cursor: crosshair; background: var(--bg); border-radius: 6px; }
+.replay-chart-box { position: relative; flex: none; width: 100%; background: var(--bg); border-radius: 6px; }
+.replay-chart { display: block; cursor: crosshair; }
+.replay-chart .grid { stroke: var(--border); stroke-dasharray: 2 4; }
+.replay-chart .tick { fill: var(--muted); font-size: 10px; font-family: "IBM Plex Mono", monospace; }
+.replay-chart .axis-title { fill: var(--muted); font-size: 10px; }
+.replay-chart .hover-line { stroke: var(--text); stroke-opacity: .35; }
+.replay-chart .dot { stroke: var(--bg); stroke-width: 1.5; }
+.replay-chart .dot.price { fill: var(--text); }
+.replay-chart .dot.equity { fill: var(--accent); }
+.replay-chart .dot.benchmark { fill: var(--muted); }
+.replay-tooltip { position: absolute; z-index: 2; width: 200px; display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; pointer-events: none; background: color-mix(in srgb, var(--panel-2) 94%, transparent); border: 1px solid var(--border); border-radius: 6px; font-size: 11px; }
+.replay-tooltip b { color: var(--text); }
+.replay-splitter { flex: none; height: 10px; margin: 2px 0; cursor: row-resize; display: flex; align-items: center; justify-content: center; touch-action: none; }
+.replay-splitter span { width: 48px; height: 4px; border-radius: 2px; background: var(--border); }
+.replay-splitter:hover span { background: var(--accent); }
+.replay-bottom { flex: 1; min-height: 0; overflow: auto; padding-right: 4px; }
 .replay-chart .line { fill: none; stroke-width: 1.4; }
 .replay-chart .price { stroke: var(--text); opacity: .75; }
 .replay-chart .equity { stroke: var(--accent); stroke-width: 1.8; }
@@ -1000,6 +1018,37 @@ pre {
 .nav-link:hover {
   border-color: var(--accent);
 }
+/* ---- wires: one hue per type, translucent until hovered or selected ---- */
+.react-flow__edge .lane-edge { stroke-width: 2; stroke-opacity: .5; transition: stroke-opacity .12s, stroke-width .12s; }
+.react-flow__edge:hover .lane-edge, .react-flow__edge.selected .lane-edge { stroke-opacity: 1; stroke-width: 3; }
+.react-flow__edge.animated .lane-edge { stroke-opacity: .9; }
+.replay-overlay > header { gap: 12px; }
+.replay-overlay .replay-title { flex: 1; }
+.replay-back { flex: none; align-self: center; }
+
+/* ---- strategy pool menu + results ---- */
+.strategy-menu { display: inline-flex; align-items: center; gap: 4px; }
+.strategy-menu select { max-width: 360px; }
+.strategy-menu .icon { padding: 2px 8px; }
+.pool-error { color: var(--amber); font-size: 11px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.results-table tbody tr { cursor: pointer; }
+.results-table tbody tr:hover, .results-table tbody tr.active { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.results-table .ok { color: var(--green); }
+.results-table .bad, .results-detail .bad { color: var(--red); }
+.results-all { flex: none; align-self: center; color: var(--muted); }
+.results-detail { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--border); }
+.results-equity { width: 100%; height: 120px; background: var(--bg); border-radius: 6px; }
+.results-equity path { fill: none; stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.results-equity text { fill: var(--muted); font-size: 10px; }
+
+.results-tabs { flex: none; display: flex; gap: 4px; margin: 6px 0 8px; border-bottom: 1px solid var(--border); }
+.results-tabs button { border: none; border-bottom: 2px solid transparent; background: none; color: var(--muted); padding: 4px 10px; border-radius: 0; }
+.results-tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
+.results-fan { width: 100%; height: 160px; background: var(--bg); border-radius: 6px; }
+.results-fan .band.outer { fill: var(--accent); opacity: .15; }
+.results-fan .band.inner { fill: var(--accent); opacity: .3; }
+.results-fan .median { fill: none; stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.results-fan text { fill: var(--muted); font-size: 10px; }
 
 /* 節點 metadata 的人類可讀呈現 */
 .meta-cards { display: flex; flex-direction: column; gap: 6px; font-size: 10px; max-height: 320px; overflow: auto; }
