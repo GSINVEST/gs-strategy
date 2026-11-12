@@ -48,9 +48,15 @@ spec:
             - {name: root, mountPath: /home/app/gs-zipline-tej, subPath: gs-zipline-tej}
           # P2：回測。gs-zipline-tej 為 b6c1504 的原始碼副本（不含 .git/.env/.venv），bundle 資料在 zipline/。
           #   Secret strategy-graph-tej 由人以 kubectl 從 WSL 的 gs-strategy/.env 建立（金鑰不進 git、不進映像）。
-          #   尚未設定：LLM 金鑰（agent／論文產生策略節點）與 QuantData 位址，見遷移評估文件。
+          #   Secret strategy-graph-llm（GS_LLM_API_KEY）同樣由人建立；目前沿用 genesis-deck-kevin.key（個人金鑰），
+          #   建議改成專用的服務金鑰，否則用量會記在個人名下。
+          #   QuantData 走 gsinvest 唯讀副本（jsonhuang 連不到 gb10 的 quantdata.lan）。
           env:
             - {name: GS_ZIPLINE_TEJ_ROOT, value: /home/app/gs-zipline-tej}
+            - {name: QD_API_BASE, value: "http://192.168.0.139:15060/api/v1"}
+            - {name: NUMEXPR_MAX_THREADS, value: "64"}
+            - name: GS_LLM_API_KEY
+              valueFrom: {secretKeyRef: {name: strategy-graph-llm, key: GS_LLM_API_KEY}}
             - name: TEJAPI_KEY
               valueFrom: {secretKeyRef: {name: strategy-graph-tej, key: TEJAPI_KEY}}
             - name: TEJAPI_BASE
