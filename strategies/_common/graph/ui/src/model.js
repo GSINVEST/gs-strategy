@@ -153,7 +153,23 @@ export async function api(path, body) {
           body: JSON.stringify(body),
         },
   );
-  const data = await r.json();
+  // 反向代理（Caddy／OIDC）可能回空 body 或登入頁；不能直接 r.json()，
+  // 否則畫面只剩瀏覽器原文 "Unexpected end of JSON input"。
+  const text = await r.text();
+  let data;
+  try {
+    data = text ? JSON.parse(text) : undefined;
+  } catch {
+    data = undefined;
+  }
+  if (data === null || typeof data !== "object") {
+    const fail = (message) => Object.assign(new Error(message), { status: r.status });
+    if (r.status === 401 || r.status === 403 || r.redirected || r.status === 200 || r.type === "opaqueredirect") {
+      throw fail("登入已過期或被導向登入頁，請重新登入後再試");
+    }
+    if (r.status >= 500) throw fail("策略圖後端暫時無法連線，請稍後重試");
+    throw fail("伺服器回應異常，請稍後重試");
+  }
   if (!r.ok) {
     const message = data.message || data.error;
     throw Object.assign(new Error(
