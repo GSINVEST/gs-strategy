@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { compatible, unavailable, estimateText, latestPreview } from "./model";
-import { edgeId, costText, initialFit, pollJob, resumeOrStart } from "./model";
+import { edgeId, costText, initialFit, pollJob, resumeOrStart, api } from "./model";
 
 it.each(["graph_revision_conflict", "run_estimate_conflict"])("C1/C3 never retries %s", async (code) => {
   const error = Object.assign(new Error("圖已變更"), { status: 409, code });
@@ -240,5 +240,33 @@ describe("latest preview scheduler", () => {
     expect(preview).toHaveBeenCalledTimes(1);
     expect(apply).toHaveBeenLastCalledWith({ momentum: { lookback: 30 } });
     q.dispose();
+  });
+});
+
+describe("api 空回應防護", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const stub = (status, body, headers = {}, redirected = false) =>
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status, headers })));
+  it("空 body 的 502 給出後端無法連線的中文訊息，而非瀏覽器原文", async () => {
+    stub(502, "");
+    await expect(api("/graph")).rejects.toMatchObject({ message: expect.stringContaining("無法連線"), status: 502 });
+  });
+  it("401/403 空 body 提示重新登入", async () => {
+    stub(401, "");
+    await expect(api("/graph")).rejects.toMatchObject({ message: expect.stringContaining("重新登入") });
+  });
+  it("200 但 body 為空（被導去登入）提示重新登入", async () => {
+    stub(200, "");
+    await expect(api("/graph")).rejects.toMatchObject({ message: expect.stringContaining("重新登入") });
+  });
+  it("200 但回 HTML（登入頁）提示重新登入", async () => {
+    stub(200, "<html></html>", { "Content-Type": "text/html" });
+    await expect(api("/graph")).rejects.toMatchObject({ message: expect.stringContaining("重新登入") });
+  });
+  it("正常 JSON 照舊回傳；帶 JSON 的錯誤保留 status/code", async () => {
+    stub(200, JSON.stringify({ a: 1 }), { "Content-Type": "application/json" });
+    await expect(api("/graph")).resolves.toEqual({ a: 1 });
+    stub(409, JSON.stringify({ error: "圖已變更", code: "graph_revision_conflict", revision: 3 }), { "Content-Type": "application/json" });
+    await expect(api("/graph")).rejects.toMatchObject({ status: 409, code: "graph_revision_conflict", revision: 3 });
   });
 });
