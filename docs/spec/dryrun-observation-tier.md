@@ -57,3 +57,12 @@ genesis-deck gateway 的 `strategylive.validate` 對欄位**逐一嚴格比對**
 - registry 目前沒有 screened 記錄（`log/promotions.jsonl` 在 PR #67，未 merge），所以真實環境要等 #67 進 main 後才能 `observe-start`。
 - 回補需要 bundle 涵蓋 `--hist-start`；zipline 重跑一個長區間的耗時未量測。
 - 觀察層績效好**不能**當作晉升理由；面板必須把 `label` 顯示出來。
+
+## 外部觀察層 run（`--extra-runs`）
+
+研究端提供、不在本帳本內的觀察層 run，可在產生快照時附加，讓 gateway 的「最新一份快照」不會被每日推送蓋掉：
+
+- `python -m strategies._common.dryrun.snapshot ... --extra-runs <檔>`；`<檔>` 是 `strategy-live-snapshot` 形狀的 JSON，只取 `runs`。隱含 `--with-observing`（輸出 /2 以上）。
+- 每日腳本以環境變數 `DRYRUN_EXTRA_RUNS=<檔>` 啟用（檔案不存在或為空＝不啟用）。檔案不合格或產生失敗時退回不帶外部 run 的快照，原本的推送不受影響。
+- 驗證（fail closed，任何一個 run 不合格就整份拒絕）：欄位需恰為完整 /2 run 欄位、`tier` 必須是 `observing`、`classification` 只能是 `forge`／`mint`／`unknown`（不可標 `open`）、`strategy_id` 格式合法且不得與帳本或檔內重複。
+- 檔案內容屬機密，不得放進任何 git 工作樹；本 repo 只有程式與合成資料的測試。產生方式見 genesis-deck 的 `scripts/gdr_observe/README.md`（以空快照當 base 即可得到只含外部 run 的檔）。

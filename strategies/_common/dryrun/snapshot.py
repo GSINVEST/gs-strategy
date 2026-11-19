@@ -84,6 +84,38 @@ def _history(conn, rid: int):
             "start": days[0] if days else "", "end": days[-1] if days else "", "equity": eq}
 
 
+# 外部觀察層 run（研究端提供、不在本帳本內）：只收 /2 以上的完整 run 欄位、只收 observing、
+# 且分類必須含機密標籤（fail closed：不可把外部資料標成 open 公開）。
+_RUN_KEYS = {"strategy_id", "lineage_id", "branch", "sha8", "classification", "start_date", "status",
+             "benchmark_status", "last_session", "trailing_missing", "days", "equity", "cost_cum",
+             "tier", "label", "d1", "history"}
+_SECRET_OR_UNKNOWN = {"forge", "mint", "unknown"}
+
+
+def load_extra_runs(path: Path, existing_ids) -> list:
+    """讀外部 run 檔（strategy-live-snapshot 形狀的 JSON，只取 runs）。任何一個 run 不合格就整份拒絕（raise ValueError）。"""
+    blob = json.loads(Path(path).read_text(encoding="utf-8"))
+    runs = blob.get("runs") if isinstance(blob, dict) else None
+    if not isinstance(runs, list) or not runs:
+        raise ValueError("extra-runs 檔需含非空的 runs 陣列")
+    seen = set(existing_ids)
+    for r in runs:
+        if not isinstance(r, dict) or set(r) != _RUN_KEYS:
+            raise ValueError("extra-runs 的 run 欄位需恰為完整 /2 欄位")
+        sid = r["strategy_id"]
+        if not isinstance(sid, str) or not _ID_RE.match(sid):
+            raise ValueError("extra-runs 的 strategy_id 格式不合")
+        if sid in seen:
+            raise ValueError(f"extra-runs 的 strategy_id 重複或與帳本衝突：{sid}")
+        seen.add(sid)
+        if r["tier"] != "observing":
+            raise ValueError("extra-runs 只收 observing")
+        cls = r["classification"]
+        if not isinstance(cls, list) or not cls or not (set(cls) <= _SECRET_OR_UNKNOWN):
+            raise ValueError("extra-runs 的 classification 必須全為機密或 unknown（不可標 open）")
+    return runs
+
+
 def build_snapshot(ledger: Path, strategies_dir: Path, *, now: dt.datetime, alerts=None,
                    include_observing: bool = False, registry: Path | None = None,
                    regime_labels: dict | None = None) -> dict:
@@ -158,6 +190,8 @@ def main(argv=None) -> int:
                     help="輸出 /2 並含觀察層（gateway 須先接受 /2，否則推送會被拒）")
     ap.add_argument("--regime-labels", help="regime 標籤 JSON（scripts/regime_labels.py 產生）；給了就輸出 /3 並隱含 --with-observing")
     ap.add_argument("--registry", help="重篩後以 registry 最新判定刷新 D1 失敗原因（唯讀）")
+    ap.add_argument("--extra-runs", help="外部觀察層 run 檔（snapshot 形狀 JSON 的 runs）；附加在帳本 run 之後，隱含 --with-observing；"
+                                         "不合格就整份拒絕（結束碼 2），不改動帳本 run")
     a = ap.parse_args(argv)
     labels = None
     if a.regime_labels:
@@ -166,8 +200,14 @@ def main(argv=None) -> int:
             ap.error(f"regime 標籤規則版本 {blob.get('rules_version')!r} ≠ {regime.RULES_VERSION!r}，請重新產生")
         labels = blob["labels"]
     snap = build_snapshot(Path(a.ledger), Path(a.strategies_dir), now=dt.datetime.now(dt.timezone.utc),
-                          alerts=check_health(Path(a.ledger)), include_observing=a.with_observing or labels is not None,
+                          alerts=check_health(Path(a.ledger)), include_observing=a.with_observing or labels is not None or bool(a.extra_runs),
                           registry=Path(a.registry) if a.registry else None, regime_labels=labels)
+    if a.extra_runs:
+        try:
+            snap["runs"] = snap["runs"] + load_extra_runs(Path(a.extra_runs), [r["strategy_id"] for r in snap["runs"]])
+        except (ValueError, OSError) as e:
+            print(f"[ERR] --extra-runs 不合格：{e}", file=sys.stderr)
+            return 2
     text = json.dumps(snap, ensure_ascii=False)
     if a.out:
         Path(a.out).write_text(text, encoding="utf-8")
