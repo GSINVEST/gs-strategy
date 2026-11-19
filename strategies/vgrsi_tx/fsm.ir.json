@@ -9,7 +9,7 @@
     "sources": [
       { "repo": "gs-strategy", "repo_commit": "6ae4209f656c852917b5664676f87cf3a0835e03", "path": "strategies/vgrsi_tx/strategy.py", "sha256_lf": "5e064b2b05ea329a2bb166d8de5febf2f344f8b9827dd0346ddec6d50306b180" },
       { "repo": "gs-strategy", "repo_commit": "6ae4209f656c852917b5664676f87cf3a0835e03", "path": "strategies/vgrsi_tx/config.yaml", "sha256_lf": "4eb9e0960e1ee93a38d37512a5b59fabc8599efe157f16166c0bae9f65be4279" },
-      { "repo": "gs-strategy", "repo_commit": "6ae4209f656c852917b5664676f87cf3a0835e03", "path": "strategies/_common/futures_setup.py", "sha256_lf": "de6216950a6836870d1b5d6cdadb41c9745d700a238d2bd0e5395b7e578e292c" }
+      { "repo": "gs-strategy", "repo_commit": "84ca80fe2fbf3bc3bd231392962467d7a699304b", "path": "strategies/_common/futures_setup.py", "sha256_lf": "a9950b7806b5fda1e9cd87edbdfad50d1925512017d9052b7cd63328376c8c23" }
     ]
   },
   "time": {
@@ -102,7 +102,8 @@
   ],
   "open_findings": [
     "換月與收盤決策排在同一個收盤時點（皆 every_day + market_close）。若換月單尚未成交就進行 _evaluate，_evaluate 用新前月合約的持倉（此時為 0）計算 qty，可能對新前月再下一張單。是否真的重複下單取決於 zipline order_target 對未成交單的處理，本次未實測，待人／工程確認。",
-    "days_left <= days_before_close 與 front != held_contract 兩條件同時成立才換月；若前月合約換了但剩餘天數仍大於 10，換月不會發生（此為程式碼讀出的行為，未實測）。"
+    "days_left <= days_before_close 與 front != held_contract 兩條件同時成立才換月；若前月合約換了但剩餘天數仍大於 10，換月不會發生（此為程式碼讀出的行為，未實測）。",
+    "T_ROLL／ROLL_DUE：futures_setup.py 在 #85（ab7468b）之後，次月合約尚無資料（data.current 回 None）時略過這次換月、維持持倉；IR 的轉移條件未建模這個分支（程式碼讀出的行為，未實測）。來源檔 hash 已於此次重同步。"
   ],
   "out_of_scope": [
     "VGRSI 訊號有沒有預測力（alpha 是否存在）",
