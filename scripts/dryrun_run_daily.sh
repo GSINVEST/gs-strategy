@@ -61,14 +61,18 @@ if [ "${DRYRUN_REGIME:-0}" = "1" ] && [ "${DRYRUN_OBSERVE:-0}" = "1" ]; then
   fi
   [ -s "$REGIME_FILE" ] && REGIME_ARGS=(--regime-labels "$REGIME_FILE")
 fi
+# 外部觀察層 run（預設關閉，須 DRYRUN_EXTRA_RUNS 指向有內容的檔案）：附加在帳本 run 之後並隱含 /2 以上。
+# 檔案不合格或產生失敗時退回不帶外部 run 的快照，不影響原本的推送。
+EXTRA_ARGS=()
+[ -n "${DRYRUN_EXTRA_RUNS:-}" ] && [ -s "$DRYRUN_EXTRA_RUNS" ] && EXTRA_ARGS=(--extra-runs "$DRYRUN_EXTRA_RUNS")
 SNAP_OK=1
 if [ "${#REGIME_ARGS[@]}" -gt 0 ]; then
-  python3 -m strategies._common.dryrun.snapshot --ledger "$LEDGER" --strategies-dir "$DRYRUN_REPO/strategies" --out "$SNAP" ${SNAP_ARGS[@]+"${SNAP_ARGS[@]}"} "${REGIME_ARGS[@]}" || SNAP_OK=0
+  python3 -m strategies._common.dryrun.snapshot --ledger "$LEDGER" --strategies-dir "$DRYRUN_REPO/strategies" --out "$SNAP" ${SNAP_ARGS[@]+"${SNAP_ARGS[@]}"} "${REGIME_ARGS[@]}" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} || SNAP_OK=0
   [ "$SNAP_OK" = 0 ] && echo "[WARN] 帶 regime 切片的快照產生失敗，退回不帶 regime 的快照"
 else
   SNAP_OK=0
 fi
-if [ "$SNAP_OK" = 1 ] || python3 -m strategies._common.dryrun.snapshot --ledger "$LEDGER" --strategies-dir "$DRYRUN_REPO/strategies" --out "$SNAP" ${SNAP_ARGS[@]+"${SNAP_ARGS[@]}"}; then
+if [ "$SNAP_OK" = 1 ]    || python3 -m strategies._common.dryrun.snapshot --ledger "$LEDGER" --strategies-dir "$DRYRUN_REPO/strategies" --out "$SNAP" ${SNAP_ARGS[@]+"${SNAP_ARGS[@]}"} ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}    || { [ "${#EXTRA_ARGS[@]}" -gt 0 ] && echo "[WARN] 帶外部 run 的快照失敗，退回不帶外部 run"         && python3 -m strategies._common.dryrun.snapshot --ledger "$LEDGER" --strategies-dir "$DRYRUN_REPO/strategies" --out "$SNAP" ${SNAP_ARGS[@]+"${SNAP_ARGS[@]}"}; }; then
   python3 -m strategies._common.dryrun.push --file "$SNAP"
   prc=$?
 else
