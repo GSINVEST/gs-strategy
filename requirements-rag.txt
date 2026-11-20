@@ -1,7 +1,7 @@
 # RAG + MCP extras (install into the crawler venv .venv)
 #   .venv/bin/pip install -r requirements-rag.txt
 # SQLite FTS5 (the vector/full-text store) is built into Python's stdlib sqlite3.
-pypdf>=6.16.1      # PDF text extraction for rag-ingest
+pypdf>=6.20.0      # PDF text extraction for rag-ingest
 # Pinned <2 deliberately: quant_crawler/rag/mcp_server.py imports
 # `mcp.server.fastmcp.FastMCP`, which mcp 2.x renamed to
 # `mcp.server.mcpserver.MCPServer`. A dependabot PR relaxed this to
