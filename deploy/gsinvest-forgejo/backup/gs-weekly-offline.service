@@ -1,0 +1,6 @@
+[Unit]
+Description=Weekly age-encrypted offline copy of gs-strategy backups
+
+[Service]
+Type=oneshot
+ExecStart=%h/bin/gs-weekly-offline.sh
