@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import math
 import re
 import sys
 from pathlib import Path
@@ -92,28 +93,195 @@ _RUN_KEYS = {"strategy_id", "lineage_id", "branch", "sha8", "classification", "s
 _SECRET_OR_UNKNOWN = {"forge", "mint", "unknown"}
 
 
-def load_extra_runs(path: Path, existing_ids) -> list:
-    """讀外部 run 檔（strategy-live-snapshot 形狀的 JSON，只取 runs）。任何一個 run 不合格就整份拒絕（raise ValueError）。"""
-    blob = json.loads(Path(path).read_text(encoding="utf-8"))
+def _extra_require(ok):
+    if not ok:
+        raise ValueError("extra-runs 欄位型別、值域或大小不合")
+
+
+def _extra_text(value, limit, nullable=False):
+    _extra_require((nullable and value is None) or (isinstance(value, str) and len(value) <= limit))
+
+
+def _extra_number(value, integer=False):
+    try:
+        finite = type(value) in (int, float) and math.isfinite(value)
+    except OverflowError:
+        finite = False
+    _extra_require(finite)
+    if integer:
+        _extra_require(type(value) is int and value >= 0)
+
+
+def _extra_keys(value, keys):
+    _extra_require(isinstance(value, dict) and set(value) == set(keys))
+
+
+def _extra_series(eq):
+    _extra_keys(eq, SCENARIOS)
+    for pts in eq.values():
+        _extra_require(isinstance(pts, list) and len(pts) <= 20000)
+        for point in pts:
+            _extra_require(isinstance(point, list) and len(point) == 2)
+            _extra_text(point[0], 10)
+            _extra_number(point[1])
+
+
+def _extra_regime(rs):
+    _extra_require(isinstance(rs, dict))
+    _extra_keys(rs, {"rules_version", "basis", "unlabeled_days", "dims"} | ({"monthly"} if "monthly" in rs else set()))
+    _extra_text(rs["rules_version"], 32)
+    _extra_require(rs["basis"] == HISTORY_BASIS)
+    _extra_number(rs["unlabeled_days"], True)
+    labels = {"trend": ("bull", "range", "bear"), "vol": ("low", "mid", "high")}
+    _extra_keys(rs["dims"], labels)
+    for dim, rows in rs["dims"].items():
+        _extra_require(isinstance(rows, list) and len(rows) <= 3)
+        for row in rows:
+            _extra_keys(row, {"label", "days", "episodes", "ret", "sharpe", "maxdd"})
+            _extra_require(row["label"] in labels[dim])
+            for key in ("days", "episodes"):
+                _extra_number(row[key], True)
+            for key in ("ret", "maxdd"):
+                _extra_number(row[key])
+            if row["sharpe"] is not None:
+                _extra_number(row["sharpe"])
+    if "monthly" in rs and rs["monthly"] is not None:
+        _extra_require(isinstance(rs["monthly"], list) and len(rs["monthly"]) <= 120)
+        for row in rs["monthly"]:
+            _extra_keys(row, {"month", "days", "trend", "vol", "ret", "sharpe12"})
+            _extra_require(isinstance(row["month"], str) and re.fullmatch(r"[0-9]{4}-(0[1-9]|1[0-2])", row["month"]) is not None)
+            _extra_number(row["days"], True)
+            _extra_number(row["ret"])
+            if row["sharpe12"] is not None:
+                _extra_number(row["sharpe12"])
+            for dim in labels:
+                _extra_require(row[dim] is None or row[dim] in labels[dim])
+
+
+def _validate_extra_run(r):
+    for key, limit in (("strategy_id", 64), ("sha8", 16), ("start_date", 10), ("last_session", 10), ("benchmark_status", 64), ("label", 100)):
+        _extra_text(r[key], limit)
+    for key in ("lineage_id", "branch"):
+        _extra_text(r[key], 128, True)
+    _extra_require(bool(r["label"]) and r["status"] in ("active", "paused"))
+    for key in ("days", "trailing_missing"):
+        _extra_number(r[key])
+    _extra_series(r["equity"])
+    _extra_keys(r["cost_cum"], {"spread", "impact", "commission"})
+    for value in r["cost_cum"].values():
+        _extra_number(value)
+    d1 = r["d1"]
+    _extra_keys(d1, {"verdict", "reasons", "pending", "screened_at", "rules_version"})
+    _extra_require(d1["verdict"] in ("blocked", "conditional"))
+    for key in ("reasons", "pending"):
+        _extra_require(isinstance(d1[key], list) and len(d1[key]) <= 50)
+        for text in d1[key]:
+            _extra_text(text, 200)
+    _extra_text(d1["screened_at"], 64)
+    _extra_text(d1["rules_version"], 32)
+    hist = r["history"]
+    if hist is not None:
+        _extra_require(isinstance(hist, dict))
+        _extra_keys(hist, {"basis", "label", "start", "end", "equity"} | ({"regime_slices"} if "regime_slices" in hist else set()))
+        _extra_require(hist["basis"] == HISTORY_BASIS)
+        for key, limit in (("label", 100), ("start", 10), ("end", 10)):
+            _extra_text(hist[key], limit)
+        _extra_series(hist["equity"])
+        if hist.get("regime_slices") is not None:
+            _extra_regime(hist["regime_slices"])
+
+
+def load_extra_snapshot(path: Path, existing_ids) -> tuple[list, list]:
+    """同檔 runs 與 alerts 原子驗證；錯誤文字不回顯外部內容。"""
+    try:
+        blob = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeError, RecursionError):
+        raise ValueError("外部檔無法讀取或 JSON 不合格") from None
     runs = blob.get("runs") if isinstance(blob, dict) else None
     if not isinstance(runs, list) or not runs:
         raise ValueError("extra-runs 檔需含非空的 runs 陣列")
+    _extra_require(len(runs) <= 100)
     seen = set(existing_ids)
     for r in runs:
         if not isinstance(r, dict) or set(r) != _RUN_KEYS:
             raise ValueError("extra-runs 的 run 欄位需恰為完整 /2 欄位")
         sid = r["strategy_id"]
-        if not isinstance(sid, str) or not _ID_RE.match(sid):
+        if not isinstance(sid, str) or not _ID_RE.fullmatch(sid):
             raise ValueError("extra-runs 的 strategy_id 格式不合")
         if sid in seen:
-            raise ValueError(f"extra-runs 的 strategy_id 重複或與帳本衝突：{sid}")
+            raise ValueError("extra-runs 的 strategy_id 重複或與帳本衝突")
         seen.add(sid)
         if r["tier"] != "observing":
             raise ValueError("extra-runs 只收 observing")
         cls = r["classification"]
-        if not isinstance(cls, list) or not cls or not (set(cls) <= _SECRET_OR_UNKNOWN):
+        if not isinstance(cls, list) or not cls or any(not isinstance(c, str) or c not in _SECRET_OR_UNKNOWN for c in cls):
             raise ValueError("extra-runs 的 classification 必須全為機密或 unknown（不可標 open）")
-    return runs
+        _validate_extra_run(r)
+    alerts = blob.get("alerts", [])
+    if not isinstance(alerts, list):
+        raise ValueError("extra-runs 的 alerts 必須是陣列")
+    local_ids = {r["strategy_id"] for r in runs}
+    for alert in alerts:
+        if not isinstance(alert, dict) or set(alert) != {"strategy_id", "level", "message"}:
+            raise ValueError("extra-runs 的 alert 欄位不合")
+        if not isinstance(alert["strategy_id"], str) or alert["strategy_id"] not in local_ids:
+            raise ValueError("extra-runs 的 alert 必須對應同檔 run")
+        if alert["level"] not in ("WARN", "CRIT"):
+            raise ValueError("extra-runs 的 alert 等級不合")
+        if not isinstance(alert["message"], str) or len(alert["message"]) > 300:
+            raise ValueError("extra-runs 的 alert 訊息長度不合")
+    return runs, alerts
+
+
+def load_extra_runs(path: Path, existing_ids) -> list:
+    """相容既有只取 runs 的呼叫端；仍驗證同檔 alerts。"""
+    return load_extra_snapshot(path, existing_ids)[0]
+
+
+def load_extra_runs_dir(path: Path, existing_ids, *, base_snapshot=None) -> tuple[list, list]:
+    """依檔名排序；每檔驗證通過才附加，失敗不占用 id。"""
+    runs, alerts = [], []
+    seen = set(existing_ids)
+    try:
+        if not Path(path).is_dir():
+            raise OSError
+        paths = sorted(Path(path).glob("*.json"), key=lambda p: p.name)
+    except OSError:
+        print("[WARN] extra run 資料夾無法讀取，略過外部檔", file=sys.stderr)
+        return runs, alerts
+    for ordinal, entry in enumerate(paths, 1):
+        try:
+            new_runs, new_alerts = load_extra_snapshot(entry, seen)
+            _extra_require(len(seen) + len(new_runs) <= 100)
+            base = base_snapshot or {"schema": SCHEMA_V3, "generated_at": "2000-01-01T00:00:00+00:00", "runs": [], "alerts": []}
+            trial = {**base, "runs": base["runs"] + runs + new_runs,
+                     "alerts": base["alerts"] + (alerts + new_alerts)[:max(0, 200 - len(base["alerts"]))]}
+            _extra_require(len(json.dumps(trial, ensure_ascii=False).encode("utf-8")) <= 2 * 1024 * 1024)
+        except (ValueError, OSError):
+            # 檔名與例外內容可能含未核定資訊；只記排序序號與固定原因。
+            print(f"[WARN] extra run 檔 #{ordinal} 不合格：驗證失敗，已略過", file=sys.stderr)
+            continue
+        runs.extend(new_runs)
+        alerts.extend(new_alerts)
+        seen.update(r["strategy_id"] for r in new_runs)
+    return runs, alerts
+
+
+def append_extra_snapshot(snap: dict, runs: list, alerts: list) -> None:
+    """保留帳本告警優先，外部告警只取剩餘額度。"""
+    if len(snap["alerts"]) > 200:
+        print("[WARN] 帳本 alerts 超過快照 200 筆上限，已截斷", file=sys.stderr)
+        snap["alerts"] = snap["alerts"][:200]
+    room = max(0, 200 - len(snap["alerts"]))
+    if len(alerts) > room:
+        print("[WARN] 外部 alerts 超過快照 200 筆上限，已截斷", file=sys.stderr)
+    candidate = {**snap, "runs": snap["runs"] + runs, "alerts": snap["alerts"] + alerts[:room]}
+    _extra_require(len(candidate["runs"]) <= 100)
+    _extra_require(len(json.dumps(candidate, ensure_ascii=False).encode("utf-8")) <= 2 * 1024 * 1024)
+    snap["runs"].extend(runs)
+    snap["alerts"].extend(alerts[:room])
+    if any(r.get("history") and "regime_slices" in r["history"] for r in runs):
+        snap["schema"] = SCHEMA_V3
 
 
 def build_snapshot(ledger: Path, strategies_dir: Path, *, now: dt.datetime, alerts=None,
@@ -192,7 +360,10 @@ def main(argv=None) -> int:
     ap.add_argument("--registry", help="重篩後以 registry 最新判定刷新 D1 失敗原因（唯讀）")
     ap.add_argument("--extra-runs", help="外部觀察層 run 檔（snapshot 形狀 JSON 的 runs）；附加在帳本 run 之後，隱含 --with-observing；"
                                          "不合格就整份拒絕（結束碼 2），不改動帳本 run")
+    ap.add_argument("--extra-runs-dir", help="逐檔讀取資料夾內 *.json；不合格只跳過該檔；優先於 --extra-runs")
     a = ap.parse_args(argv)
+    if a.extra_runs_dir and a.extra_runs:
+        print("[WARN] 同時設定外部資料夾與單檔，資料夾優先、忽略單檔", file=sys.stderr)
     labels = None
     if a.regime_labels:
         blob = json.loads(Path(a.regime_labels).read_text(encoding="utf-8"))
@@ -200,11 +371,13 @@ def main(argv=None) -> int:
             ap.error(f"regime 標籤規則版本 {blob.get('rules_version')!r} ≠ {regime.RULES_VERSION!r}，請重新產生")
         labels = blob["labels"]
     snap = build_snapshot(Path(a.ledger), Path(a.strategies_dir), now=dt.datetime.now(dt.timezone.utc),
-                          alerts=check_health(Path(a.ledger)), include_observing=a.with_observing or labels is not None or bool(a.extra_runs),
+                          alerts=check_health(Path(a.ledger)), include_observing=a.with_observing or labels is not None or bool(a.extra_runs or a.extra_runs_dir),
                           registry=Path(a.registry) if a.registry else None, regime_labels=labels)
-    if a.extra_runs:
+    if a.extra_runs_dir:
+        append_extra_snapshot(snap, *load_extra_runs_dir(Path(a.extra_runs_dir), [r["strategy_id"] for r in snap["runs"]], base_snapshot=snap))
+    elif a.extra_runs:
         try:
-            snap["runs"] = snap["runs"] + load_extra_runs(Path(a.extra_runs), [r["strategy_id"] for r in snap["runs"]])
+            append_extra_snapshot(snap, *load_extra_snapshot(Path(a.extra_runs), [r["strategy_id"] for r in snap["runs"]]))
         except (ValueError, OSError) as e:
             print(f"[ERR] --extra-runs 不合格：{e}", file=sys.stderr)
             return 2
