@@ -61,10 +61,15 @@ if [ "${DRYRUN_REGIME:-0}" = "1" ] && [ "${DRYRUN_OBSERVE:-0}" = "1" ]; then
   fi
   [ -s "$REGIME_FILE" ] && REGIME_ARGS=(--regime-labels "$REGIME_FILE")
 fi
-# 外部觀察層 run（預設關閉，須 DRYRUN_EXTRA_RUNS 指向有內容的檔案）：附加在帳本 run 之後並隱含 /2 以上。
+# 外部觀察層 run：DRYRUN_EXTRA_RUNS_DIR 逐檔隔離；舊 DRYRUN_EXTRA_RUNS 單檔仍相容。
 # 檔案不合格或產生失敗時退回不帶外部 run 的快照，不影響原本的推送。
 EXTRA_ARGS=()
-[ -n "${DRYRUN_EXTRA_RUNS:-}" ] && [ -s "$DRYRUN_EXTRA_RUNS" ] && EXTRA_ARGS=(--extra-runs "$DRYRUN_EXTRA_RUNS")
+if [ -n "${DRYRUN_EXTRA_RUNS_DIR:-}" ]; then
+  EXTRA_ARGS=(--extra-runs-dir "$DRYRUN_EXTRA_RUNS_DIR")
+  [ -n "${DRYRUN_EXTRA_RUNS:-}" ] && echo "[WARN] 同時設定外部資料夾與單檔，資料夾優先、忽略單檔"
+elif [ -n "${DRYRUN_EXTRA_RUNS:-}" ] && [ -s "$DRYRUN_EXTRA_RUNS" ]; then
+  EXTRA_ARGS=(--extra-runs "$DRYRUN_EXTRA_RUNS")
+fi
 SNAP_OK=1
 if [ "${#REGIME_ARGS[@]}" -gt 0 ]; then
   python3 -m strategies._common.dryrun.snapshot --ledger "$LEDGER" --strategies-dir "$DRYRUN_REPO/strategies" --out "$SNAP" ${SNAP_ARGS[@]+"${SNAP_ARGS[@]}"} "${REGIME_ARGS[@]}" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} || SNAP_OK=0

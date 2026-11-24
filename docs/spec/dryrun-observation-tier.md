@@ -58,11 +58,22 @@ genesis-deck gateway 的 `strategylive.validate` 對欄位**逐一嚴格比對**
 - 回補需要 bundle 涵蓋 `--hist-start`；zipline 重跑一個長區間的耗時未量測。
 - 觀察層績效好**不能**當作晉升理由；面板必須把 `label` 顯示出來。
 
-## 外部觀察層 run（`--extra-runs`）
+## 外部觀察層 run（多檔／舊單檔相容）
 
-研究端提供、不在本帳本內的觀察層 run，可在產生快照時附加，讓 gateway 的「最新一份快照」不會被每日推送蓋掉：
+研究端提供、不在本帳本內的觀察層 run，在每日快照附加。建議將轉換完成的 GDR 與其他研究端來源檔案放到 git 工作樹外的 `extra.d/`：
 
-- `python -m strategies._common.dryrun.snapshot ... --extra-runs <檔>`；`<檔>` 是 `strategy-live-snapshot` 形狀的 JSON，只取 `runs`。隱含 `--with-observing`（輸出 /2 以上）。
-- 每日腳本以環境變數 `DRYRUN_EXTRA_RUNS=<檔>` 啟用（檔案不存在或為空＝不啟用）。檔案不合格或產生失敗時退回不帶外部 run 的快照，原本的推送不受影響。
-- 驗證（fail closed，任何一個 run 不合格就整份拒絕）：欄位需恰為完整 /2 run 欄位、`tier` 必須是 `observing`、`classification` 只能是 `forge`／`mint`／`unknown`（不可標 `open`）、`strategy_id` 格式合法且不得與帳本或檔內重複。
-- 檔案內容屬機密，不得放進任何 git 工作樹；本 repo 只有程式與合成資料的測試。產生方式見 genesis-deck 的 `scripts/gdr_observe/README.md`（以空快照當 base 即可得到只含外部 run 的檔）。
+```bash
+export DRYRUN_EXTRA_RUNS_DIR="$HOME/.local/share/gs-dryrun/extra.d"
+python -m strategies._common.dryrun.snapshot --ledger "$DRYRUN_LEDGER_DIR/dry_ledger.sqlite" \
+  --strategies-dir strategies --extra-runs-dir "$DRYRUN_EXTRA_RUNS_DIR" --out snapshot.json
+```
+
+- `--extra-runs-dir` 依檔名排序讀取 `*.json`，每檔同時驗證 `runs` 與 `alerts`；一檔失敗只跳過該檔，其他檔與帳本 run 照常輸出。全部失敗仍產生帳本快照。
+- `strategy_id` 不得與帳本、檔內或已接受檔案重複；排序較後的衝突檔整檔略過，該檔其他 id 也不會被占用。
+- 僅收完整 observing run，classification 只能含 `forge`、`mint`、`unknown`。巢狀 `equity`、`cost_cum`、`d1`、`history` 與可選 regime 切片依 gateway 欄位及大小限制驗證。快照隱含觀察層，使用 regime 切片時升為 `/3`。
+- `alerts` 可省略（舊檔相容），有提供時必須是陣列，單筆鍵恰為 `strategy_id`、`level`、`message`；id 必須屬同檔 run，等級只收 `WARN`／`CRIT`，訊息最多 300 字。無效 alert 使整檔略過。
+- 帳本告警優先保留，外部告警依檔名與陣列順序附加；總數超過 200 時先截斷外部告警並 WARN；帳本本身已超限時也截尾至 200 並 WARN（限外部附加路徑）。累計 run 超過 100 或序列化大小超過 2 MiB 時，略過造成超限的整檔並 WARN。
+- 舊 `--extra-runs <檔>` 與每日腳本 `DRYRUN_EXTRA_RUNS=<檔>` 繼續支援。單檔驗證失敗時 CLI 回傳 2，由每日腳本退回不帶外部 run 的快照。舊單檔的 alerts 現在也會附加。
+- 同時設定資料夾與單檔時資料夾優先，忽略單檔並輸出一行 WARN。資料夾不存在或無法讀取也只告警，保留帳本快照。
+- 為避免把未核定內容寫進 log，逐檔 WARN 以排序序號代稱檔案，只給固定驗證失敗原因，不回顯檔名、路徑、資料內容或例外原文。可於受控環境依當次檔名排序定位。
+- 真實檔案不得放進 git 工作樹；測試全部採合成資料。GDR 產生方法見 genesis-deck `scripts/gdr_observe/README.md`。
