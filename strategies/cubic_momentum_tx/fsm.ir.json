@@ -9,7 +9,7 @@
     "sources": [
       { "repo": "gs-strategy", "repo_commit": "6ae4209f656c852917b5664676f87cf3a0835e03", "path": "strategies/cubic_momentum_tx/strategy.py", "sha256_lf": "b7a1b2f106d1cbc9a6cf1de34bb10be0a605b553b3f11763b165e4fd71ce4d87" },
       { "repo": "gs-strategy", "repo_commit": "6ae4209f656c852917b5664676f87cf3a0835e03", "path": "strategies/cubic_momentum_tx/config.yaml", "sha256_lf": "dae602a44398c11d923bc9128021b0b192b14f8230968c522386c1136c29bdf2" },
-      { "repo": "gs-strategy", "repo_commit": "84ca80fe2fbf3bc3bd231392962467d7a699304b", "path": "strategies/_common/futures_setup.py", "sha256_lf": "a9950b7806b5fda1e9cd87edbdfad50d1925512017d9052b7cd63328376c8c23" }
+      { "repo": "gs-strategy", "repo_commit": "84ca80fe2fbf3bc3bd231392962467d7a699304b", "path": "strategies/_common/futures_setup.py", "sha256_lf": "acd351072ecd0b2bc3a95d10f24fcbb25d3eacd018382413612d8f237e4792be" }
     ]
   },
   "time": {

@@ -27,8 +27,8 @@ def test_a1_fresh_cost_helper_and_fingerprint(tmp_path, monkeypatch):
     first = graph_nodes._legacy()
     before = core.code_fingerprint(tmp_path / 'futures_setup.py')
     path = tmp_path / 'futures_setup.py'
-    path.write_text(path.read_text().replace('spread=spread_points or DEFAULT_SPREAD_POINTS',
-                    'spread=2 * (spread_points or DEFAULT_SPREAD_POINTS)'), encoding='utf-8')
+    path.write_text(path.read_text().replace('FixedSlippage(spread=spread)',
+                    'FixedSlippage(spread=2 * spread)'), encoding='utf-8')
     second = graph_nodes._legacy()
     assert core.code_fingerprint(path) != before
     spreads = []

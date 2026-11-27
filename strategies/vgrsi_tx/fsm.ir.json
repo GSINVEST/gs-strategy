@@ -9,7 +9,7 @@
     "sources": [
       { "repo": "gs-strategy", "repo_commit": "6ae4209f656c852917b5664676f87cf3a0835e03", "path": "strategies/vgrsi_tx/strategy.py", "sha256_lf": "5e064b2b05ea329a2bb166d8de5febf2f344f8b9827dd0346ddec6d50306b180" },
       { "repo": "gs-strategy", "repo_commit": "6ae4209f656c852917b5664676f87cf3a0835e03", "path": "strategies/vgrsi_tx/config.yaml", "sha256_lf": "4eb9e0960e1ee93a38d37512a5b59fabc8599efe157f16166c0bae9f65be4279" },
-      { "repo": "gs-strategy", "repo_commit": "84ca80fe2fbf3bc3bd231392962467d7a699304b", "path": "strategies/_common/futures_setup.py", "sha256_lf": "a9950b7806b5fda1e9cd87edbdfad50d1925512017d9052b7cd63328376c8c23" }
+      { "repo": "gs-strategy", "repo_commit": "84ca80fe2fbf3bc3bd231392962467d7a699304b", "path": "strategies/_common/futures_setup.py", "sha256_lf": "acd351072ecd0b2bc3a95d10f24fcbb25d3eacd018382413612d8f237e4792be" }
     ]
   },
   "time": {
