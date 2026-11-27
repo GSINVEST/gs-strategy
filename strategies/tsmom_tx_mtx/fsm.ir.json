@@ -9,7 +9,7 @@
     "sources": [
       { "repo": "gs-strategy", "repo_commit": "6ae4209f656c852917b5664676f87cf3a0835e03", "path": "strategies/tsmom_tx_mtx/strategy.py", "sha256_lf": "00b3c47d3a4dacdffdb1fc1bcc572a0bcf61d0e19115a8b73c29aed97acbe60e" },
       { "repo": "gs-strategy", "repo_commit": "6ae4209f656c852917b5664676f87cf3a0835e03", "path": "strategies/tsmom_tx_mtx/config.yaml", "sha256_lf": "591b961d0c258b4e2d4c36f6c822f6e02d209af6736540c818412d1f0b0c3285" },
-      { "repo": "gs-strategy", "repo_commit": "84ca80fe2fbf3bc3bd231392962467d7a699304b", "path": "strategies/_common/futures_setup.py", "sha256_lf": "a9950b7806b5fda1e9cd87edbdfad50d1925512017d9052b7cd63328376c8c23" }
+      { "repo": "gs-strategy", "repo_commit": "84ca80fe2fbf3bc3bd231392962467d7a699304b", "path": "strategies/_common/futures_setup.py", "sha256_lf": "acd351072ecd0b2bc3a95d10f24fcbb25d3eacd018382413612d8f237e4792be" }
     ]
   },
   "scope": { "kind": "per_instrument", "instances": ["TX", "MTX"] },

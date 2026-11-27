@@ -54,9 +54,9 @@ def apply_taiwan_futures_costs(
     if per_contract_cost:
         cost_map.update(per_contract_cost)
     set_commission(futures=PerContract(cost=cost_map, exchange_fee=0))
-    set_slippage(
-        futures=FixedSlippage(spread=spread_points or DEFAULT_SPREAD_POINTS)
-    )
+    # None means "use the default"; an explicit 0 means zero slippage.
+    spread = DEFAULT_SPREAD_POINTS if spread_points is None else spread_points
+    set_slippage(futures=FixedSlippage(spread=spread))
     if benchmark:
         # IR0001 (加權報酬指數) lives in the `tquant` equity bundle, not
         # `tquant_future`. Caller must opt-in *and* ensure the symbol exists
